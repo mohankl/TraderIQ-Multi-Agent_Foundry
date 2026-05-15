@@ -1,0 +1,129 @@
+import os
+
+import wikipedia
+import yfinance as yf
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+from serpapi import GoogleSearch
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+
+SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY")
+MCP_API_KEY = os.environ.get("MCP_API_KEY")
+
+
+class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path.startswith("/mcp"):
+            if not MCP_API_KEY or request.headers.get("x-api-key") != MCP_API_KEY:
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+mcp = FastMCP(
+    "finbot-tools",
+    stateless_http=True,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
+
+
+@mcp.tool()
+def get_stock_fundamentals(ticker: str) -> dict:
+    """Fetch current fundamentals for a publicly traded stock.
+
+    Use this to get price, P/E ratio, market cap, revenue growth, and 52-week
+    range for any ticker symbol (e.g. AAPL, MSFT, TSLA). Returns structured
+    numeric data sourced from Yahoo Finance. Prefer this over web search when
+    the user asks about price, valuation multiples, or financial metrics.
+    """
+    stock = yf.Ticker(ticker)
+    info = stock.info or {}
+    return {
+        "ticker": ticker.upper(),
+        "price": info.get("currentPrice"),
+        "pe_ratio": info.get("trailingPE"),
+        "market_cap": info.get("marketCap"),
+        "revenue_growth": info.get("revenueGrowth"),
+        "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+        "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+    }
+
+
+@mcp.tool()
+def get_yahoo_finance_news(ticker: str) -> str:
+    """Fetch recent news headlines for a stock ticker from Yahoo Finance.
+
+    Use this for stock-specific news (earnings, analyst actions, company events).
+    Returns concatenated headlines and summaries.
+    """
+    stock = yf.Ticker(ticker)
+    news_items = stock.news or []
+    if not news_items:
+        return f"No recent Yahoo Finance news for {ticker.upper()}."
+    lines = []
+    for item in news_items[:10]:
+        content = item.get("content", item)
+        title = content.get("title") or item.get("title", "")
+        summary = content.get("summary") or content.get("description", "")
+        if title:
+            lines.append(f"- {title}: {summary}".strip())
+    return "\n".join(lines) if lines else f"No headlines available for {ticker.upper()}."
+
+
+@mcp.tool()
+def search_news(query: str) -> str:
+    """Search Google News for headlines from the last 24 hours.
+
+    Use this for broad market or macro news (e.g. "Fed rate decision",
+    "semiconductor demand"). For company-specific stock news, prefer
+    get_yahoo_finance_news. Returns a text summary of top headlines.
+    """
+    if not SERPAPI_API_KEY:
+        return "SERPAPI_API_KEY is not configured on the MCP server."
+    search = GoogleSearch(
+        {
+            "q": query,
+            "tbm": "nws",
+            "tbs": "qdr:d",
+            "api_key": SERPAPI_API_KEY,
+        }
+    )
+    results = search.get_dict()
+    items = results.get("news_results", [])
+    if not items:
+        return f"No news results found for: {query}"
+    lines = []
+    for item in items[:10]:
+        title = item.get("title", "")
+        source = item.get("source", "")
+        snippet = item.get("snippet", "")
+        lines.append(f"- [{source}] {title}: {snippet}".strip())
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def wikipedia_lookup(query: str) -> str:
+    """Look up background information from Wikipedia.
+
+    Use this for context on companies, industries, executives, financial
+    concepts, or historical events. Returns a summary of the most relevant
+    article. Do not use for current prices or news.
+    """
+    try:
+        return wikipedia.summary(query, sentences=5, auto_suggest=True, redirect=True)
+    except wikipedia.DisambiguationError as e:
+        options = ", ".join(e.options[:5])
+        return f"Ambiguous query. Try one of: {options}"
+    except wikipedia.PageError:
+        return f"No Wikipedia page found for: {query}"
+
+
+app = mcp.streamable_http_app()
+app.add_middleware(ApiKeyAuthMiddleware)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8080)

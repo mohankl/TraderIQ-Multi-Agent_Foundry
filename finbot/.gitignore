@@ -1,0 +1,12 @@
+.venv
+__pycache__/
+.ipynb_checkpoints/
+*.db
+.vscode/
+.DS_Store
+*.log
+# Ignore the .env file that contains environment variables
+*.env
+.idea/
+*.iml
+*.lock
