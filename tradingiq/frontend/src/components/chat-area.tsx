@@ -201,15 +201,7 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [live, setLive] = useState<LiveAssistant | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const msgCountRef = useRef(0);
-
-  useEffect(() => {
-    setLocalMessages(thread?.messages ?? []);
-    setError(null);
-    setInput("");
-    setLive(null);
-    msgCountRef.current = thread?.messages.length ?? 0;
-  }, [thread?.id]);
+  const msgCountRef = useRef(thread?.messages.length ?? 0);
 
   useEffect(() => {
     const isNewMessage = localMessages.length > msgCountRef.current;

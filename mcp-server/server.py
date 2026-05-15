@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import wikipedia
 import yfinance as yf
@@ -8,7 +8,6 @@ from mcp.server.transport_security import TransportSecuritySettings
 from serpapi import GoogleSearch
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-
 
 SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY")
 MCP_API_KEY = os.environ.get("MCP_API_KEY")
@@ -41,7 +40,7 @@ def _as_of_from_unix(ts: float | int | None) -> str | None:
     if ts is None:
         return None
     try:
-        return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(float(ts), tz=UTC).isoformat()
     except (ValueError, OSError, TypeError):
         return None
 

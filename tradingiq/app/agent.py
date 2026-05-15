@@ -1,6 +1,7 @@
 import json
 import uuid
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from ag_ui.core import (
     CustomEvent,
@@ -68,7 +69,7 @@ async def run_agent_stream(
     query: str,
     thread_id: str | None,
     run_id: str,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str]:
     """Call Foundry agent and stream AG-UI protocol events back to the client.
 
     Yields encoded SSE strings. thread_id carries the previous Foundry

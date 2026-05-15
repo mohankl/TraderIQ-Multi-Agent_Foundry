@@ -27,3 +27,25 @@ dependencies = [
     "azure-monitor-opentelemetry-exporter>=1.0.0b52",
     "azure-core-tracing-opentelemetry>=1.0.0b11",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E/W: pycodestyle, F: pyflakes, I: isort, B: bugbear, UP: pyupgrade
+ignore = [
+    "E501",  # line-too-long — handled by formatter, not lint
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

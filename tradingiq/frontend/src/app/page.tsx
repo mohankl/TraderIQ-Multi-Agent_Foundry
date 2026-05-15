@@ -28,9 +28,12 @@ export default function Home() {
     }
   }, [activeThreadId]);
 
-  // Initial Load
+  // Hydrate from localStorage on mount. setState-in-effect is the correct
+  // pattern here because localStorage is unavailable during SSR, so this
+  // can't run as a lazy initializer.
   useEffect(() => {
     const all = getThreads();
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     setThreads(all);
     const savedId = getActiveThreadId();
     if (savedId && all.find((t) => t.id === savedId)) {
