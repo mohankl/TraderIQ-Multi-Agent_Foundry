@@ -13,6 +13,7 @@ import {
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChartRenderPayload } from "@/lib/threads";
+import { RenderSource } from "@/components/render-source";
 
 interface ChartCardProps {
   payload: ChartRenderPayload;
@@ -28,7 +29,7 @@ function formatDate(d: string): string {
 }
 
 export function ChartCard({ payload }: ChartCardProps) {
-  const { ticker, period, points, stats } = payload;
+  const { ticker, period, points, stats, as_of, source_tool_call_id } = payload;
   if (!points?.length || !stats) {
     return (
       <div className="my-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
@@ -144,6 +145,8 @@ export function ChartCard({ payload }: ChartCardProps) {
           {points.length} pts
         </span>
       </div>
+
+      <RenderSource as_of={as_of} source_tool_call_id={source_tool_call_id} />
     </div>
   );
 }

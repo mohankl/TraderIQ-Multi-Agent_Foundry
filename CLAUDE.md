@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `11` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
+- **Agent name:** `alphastate-trading-mma-agent` (version `16` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -29,9 +29,9 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v4` | 8080 | MCP server, 5 tools (`get_price_history` added in v3; v4 sharpens docstrings to stop the agent from substituting fundamentals for chart queries) |
-| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v4` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). Extracts `get_price_history` tool outputs and emits AG-UI `CUSTOM` events |
-| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v3` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders inline charts via Recharts |
+| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v7` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance |
+| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v8` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). Generic envelope extractor (no per-tool code); attaches `source_tool_call_id` and surfaces Foundry approval-pending state as a clear error |
+| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v6` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders inline charts + stock cards via a render-slot registry; provenance footer shows `as_of` + tool-call id |
 
 All three apps use system-assigned managed identity for ACR pull.
 
@@ -92,21 +92,43 @@ Trading-Multi-Agent/
 
 ## Generative UI / Inline Components
 
-The frontend renders agent-driven UI (currently: stock charts) using AG-UI `CUSTOM` events. Flow:
+The frontend renders agent-driven UI (today: stock charts, stock cards) using AG-UI `CUSTOM` events. **MCP tools self-describe their UI**; FastAPI is a generic forwarder.
 
-1. Agent calls an MCP tool that returns structured data (today: `get_price_history`).
-2. FastAPI's [agent.py](finbot/app/agent.py) inspects `response.output` after the Foundry call. `_extract_chart_payloads()` finds `mcp_call` items where `name == "get_price_history"` and parses their JSON `output` into a typed render payload `{kind, chartType, ticker, period, points, stats}`.
-3. FastAPI emits one AG-UI `CUSTOM` event per payload with `name="ui.render"` and `value=<payload>`, placed between `TEXT_MESSAGE_END` and `RUN_FINISHED`.
-4. The frontend SSE parser in [chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) collects these CUSTOM events into a `renderSlots` array on the persisted assistant message.
-5. [chat-message.tsx](finbot/frontend/src/components/chat-message.tsx) renders the markdown text then iterates `renderSlots` through [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](finbot/frontend/src/components/chart-card.tsx), Recharts).
+### Self-describing tool envelope
+
+Renderable MCP tools return:
+
+```json
+{
+  "data": { "...the actual data..." , "as_of": "2026-05-14T20:00:00+00:00" },
+  "render": { "kind": "stock_card", "...optional hints..." }
+}
+```
+
+Tools that don't render UI (`get_yahoo_finance_news`, `search_news`, `wikipedia_lookup`) return plain strings — they're skipped by the extractor.
+
+### Flow
+
+1. Agent calls an MCP tool that returns the envelope above.
+2. FastAPI's [agent.py](finbot/app/agent.py) iterates `response.output`. For every tool-call item whose parsed JSON has both `data` and `render`, it merges them into a flat payload `{kind, ...render-hints, ...data}`, attaches `source_tool_call_id` (the Foundry `mcp_*` id), and emits one AG-UI `CUSTOM` event per envelope with `name="ui.render"`, between `TEXT_MESSAGE_END` and `RUN_FINISHED`.
+3. The frontend SSE parser in [chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) collects these CUSTOM events into a `renderSlots` array on the persisted assistant message.
+4. [chat-message.tsx](finbot/frontend/src/components/chat-message.tsx) renders the markdown text then iterates `renderSlots` through [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](finbot/frontend/src/components/chart-card.tsx), [stock-card.tsx](finbot/frontend/src/components/stock-card.tsx)).
+5. Every card renders a tiny [render-source.tsx](finbot/frontend/src/components/render-source.tsx) footer showing `as_of` and the tool-call id, so drift between the narrative and the card is visible.
+
+### Division of labor (the narrative-vs-card contract)
+
+Each renderable tool's docstring carries a "DIVISION OF LABOR" section instructing the agent:
+- **Do NOT** restate any number the card already shows (price, P/E, market cap, 52w range, etc.). Restating creates drift between the LLM's prose and the source-of-truth card.
+- **Do** write interpretation the card can't express: valuation judgement, news context, risks, outlook, shape of a trend.
+- Tools include "GOOD reply" / "BAD reply" examples to anchor the pattern.
 
 ### Adding a new inline component
 
-1. Add an MCP tool in [mcp-server/server.py](mcp-server/server.py) that returns structured JSON.
-2. Add a new variant to the `RenderPayload` union in [threads.ts](finbot/frontend/src/lib/threads.ts) (e.g. `HeatmapRenderPayload`).
-3. Teach `_extract_chart_payloads` (or a sibling) to recognize that tool's `mcp_call` name and convert its output. Rename the helper if a chart-specific name becomes misleading.
-4. Add a case to [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx) and ship the component.
-5. Bump the Foundry agent version after attaching the new tool, and pin the env var on `finbot-api`.
+1. Add an MCP tool in [mcp-server/server.py](mcp-server/server.py) that returns the envelope `{data, render: {kind: "your_kind"}}`. Include `data.as_of` if applicable. Write its docstring with a DIVISION OF LABOR section.
+2. Add a new variant to the `RenderPayload` union in [threads.ts](finbot/frontend/src/lib/threads.ts).
+3. Add a case to [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx) and ship the component (use `RenderSource` for the provenance footer).
+4. **No FastAPI change needed** — the generic envelope detector picks it up automatically.
+5. In the Foundry portal: approve the new tool (auto-approve recommended), then save a new agent version. Pin the env var on `finbot-api`.
 
 ### Why AG-UI `CUSTOM`, not text-embedded JSON or `TOOL_CALL_RESULT`
 
@@ -159,6 +181,9 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v8.1` — Project Claude Code settings, slash commands, agents, prod-guard hook
 - `v9.0` — Inline charts (generative UI): `get_price_history` MCP tool, AG-UI `CUSTOM` events, Recharts ChartCard, render-slot registry
 - `v9.1` — Sharpened MCP tool docstrings so the agent reliably picks `get_price_history` for chart queries instead of substituting `get_stock_fundamentals` (mcp:v4, agent v11)
+- `v9.2` — Stock card (boarding-pass style) for fundamentals queries; richer get_stock_fundamentals output (exchange, sector, market-cap tier, dividend yield, ROE, volume); 52-week range visual bar (mcp:v5, api:v5, web:v4, agent v12)
+- `v10.0` — Self-describing tool envelope `{data, render}`. FastAPI extractor is now generic — no per-tool code. Adding a new inline UI component no longer requires a backend change (mcp:v6, api:v6, agent v14)
+- `v10.1` — Lossy-round-trip fix. Tool docstrings codify division of labor (card owns numbers, narrative owns interpretation). Tool data carries `as_of`; render payloads carry `source_tool_call_id`. Cards show a tiny provenance footer. Approval-pending state now surfaces as a clear error and doesn't poison the conversation (mcp:v7, api:v8, web:v6, agent v16)
 
 ## Keeping This File Current
 

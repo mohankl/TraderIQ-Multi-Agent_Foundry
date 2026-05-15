@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 import wikipedia
 import yfinance as yf
@@ -28,37 +29,119 @@ mcp = FastMCP(
 )
 
 
+def _as_of_from_unix(ts: float | int | None) -> str | None:
+    """Convert a Unix timestamp (seconds) to an ISO-8601 UTC string."""
+    if ts is None:
+        return None
+    try:
+        return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+    except (ValueError, OSError, TypeError):
+        return None
+
+
+def _market_cap_tier(cap: float | None) -> str | None:
+    """Classify market cap into the standard tiers used by analysts."""
+    if cap is None:
+        return None
+    if cap >= 200_000_000_000:
+        return "Mega-Cap"
+    if cap >= 10_000_000_000:
+        return "Large-Cap"
+    if cap >= 2_000_000_000:
+        return "Mid-Cap"
+    if cap >= 300_000_000:
+        return "Small-Cap"
+    return "Micro-Cap"
+
+
 @mcp.tool()
 def get_stock_fundamentals(ticker: str) -> dict:
     """Fetch a current SNAPSHOT of fundamentals for a publicly traded stock.
 
-    Use this for: current price, P/E ratio, market cap, revenue growth, and the
-    52-week high/low *numbers* (two values). Sourced from Yahoo Finance.
+    WHEN TO CALL THIS TOOL — whenever the user asks for any of:
+      - "fundamentals", "snapshot", "stats", "details", or "info" of a stock
+      - "show me the card", "stock card", "details card" for a ticker
+      - current price, P/E ratio, market cap, dividend yield, ROE, volume
+      - the 52-week range *numbers* (two scalar values)
 
-    DO NOT use this when the user asks for a chart, graph, plot, trend, or
-    historical performance — this returns ONLY two scalar values for the
-    52-week range (high and low), not a time series. The frontend cannot render
-    a chart from this tool's output. For chart/graph/trend/historical queries,
-    call get_price_history instead.
+    DO NOT use this for a CHART, GRAPH, PLOT, TREND, or HISTORICAL performance
+    — this returns only scalar snapshot values, not a time series. For those
+    queries, call get_price_history instead.
+
+    DIVISION OF LABOR — read carefully:
+      The frontend renders an inline stock-card UI directly from this tool's
+      structured output. The card already shows: ticker, exchange, sector,
+      price, intraday change, 52-week range, market cap (with tier), P/E,
+      dividend yield, ROE, and volume.
+
+      Your reply should NOT restate any of those numbers. The card shows them.
+      Restating them creates contradiction risk and wastes the user's time.
+
+      Your reply SHOULD contain interpretation that the card cannot express:
+        - valuation judgement ("fairly valued given the P/E", "rich vs sector")
+        - notable news context (one or two recent drivers, not a full list)
+        - 1-2 key risks
+        - a one-line outlook
+
+      GOOD reply (≈3 short bullets, no raw numbers):
+        "MSFT looks fairly valued given steady revenue growth and a moderate
+        P/E vs peers. Recent attention has centered on AI ecosystem moves
+        and workforce changes; legal exposure around AI partnerships is the
+        notable risk. Outlook: stable execution, watch regulatory headlines."
+
+      BAD reply (just restates the card):
+        "MSFT is at $409.43 with a P/E of 24.16 and market cap $3.04T. The
+        52-week range is X to Y..." — DO NOT DO THIS.
+
+    Args:
+        ticker: Symbol like AAPL, MSFT, TSLA.
+
+    Returns:
+        A self-describing envelope: `{"data": {...fundamentals fields..., "as_of": ISO timestamp},
+        "render": {"kind": "stock_card"}}`. The agent reads `data` for context;
+        FastAPI forwards the envelope to the frontend as a UI render hint.
+        Sourced from Yahoo Finance.
     """
     stock = yf.Ticker(ticker)
     info = stock.info or {}
-    return {
+    price = info.get("currentPrice") or info.get("regularMarketPrice")
+    prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+    change = None
+    change_pct = None
+    if isinstance(price, (int, float)) and isinstance(prev_close, (int, float)) and prev_close:
+        change = round(price - prev_close, 2)
+        change_pct = round((change / prev_close) * 100.0, 2)
+
+    market_cap = info.get("marketCap")
+    as_of = _as_of_from_unix(info.get("regularMarketTime"))
+    data = {
         "ticker": ticker.upper(),
-        "price": info.get("currentPrice"),
+        "name": info.get("longName") or info.get("shortName"),
+        "exchange": info.get("fullExchangeName") or info.get("exchange"),
+        "sector": info.get("sector"),
+        "price": price,
+        "previous_close": prev_close,
+        "change": change,
+        "change_pct": change_pct,
         "pe_ratio": info.get("trailingPE"),
-        "market_cap": info.get("marketCap"),
+        "market_cap": market_cap,
+        "market_cap_tier": _market_cap_tier(market_cap),
         "revenue_growth": info.get("revenueGrowth"),
+        "dividend_yield": info.get("dividendYield"),
+        "return_on_equity": info.get("returnOnEquity"),
+        "volume": info.get("volume") or info.get("regularMarketVolume"),
         "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
         "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+        "as_of": as_of,
     }
+    return {"data": data, "render": {"kind": "stock_card"}}
 
 
 @mcp.tool()
 def get_price_history(ticker: str, period: str = "1y") -> dict:
     """Fetch a daily price-history TIME SERIES for a stock; the UI renders it as a chart.
 
-    YOU MUST CALL THIS TOOL whenever the user asks for any of:
+    WHEN TO CALL THIS TOOL — whenever the user asks for any of:
       - a "chart", "graph", "plot", "visual" of a stock
       - "show me" a stock's prices
       - a "52-week chart" or "annual chart" (use period="1y")
@@ -71,9 +154,32 @@ def get_price_history(ticker: str, period: str = "1y") -> dict:
     frontend cannot render a chart from a snapshot.
 
     DO NOT say "I cannot show charts" or refer the user to external sites.
-    The frontend renders an inline chart card automatically from this tool's
-    output — your job is to call this tool, then write a 2-3 sentence
-    narrative referencing the stats (start, end, high, low, pct_change).
+
+    DIVISION OF LABOR — read carefully:
+      The frontend renders an inline chart card directly from this tool's
+      structured output. The chart already shows: ticker, period, start/end
+      prices, high, low, and percent change.
+
+      Your reply should NOT restate any of those numbers. The chart shows them.
+      Restating them creates contradiction risk and wastes the user's time.
+
+      Your reply SHOULD contain interpretation the chart cannot express:
+        - the shape of the move ("steady uptrend", "V-shaped recovery",
+          "sideways with two pullbacks")
+        - the most likely *why* if obvious from the date range (earnings,
+          macro events) — call get_yahoo_finance_news only if the answer
+          requires it
+        - one risk to watch
+
+      GOOD reply:
+        "NVDA traced a strong uptrend over the past 12 months, with one
+        notable pullback in mid-October before recovering to new highs.
+        Momentum has been carried by AI-related demand; watch for
+        guidance revisions if data-center growth decelerates."
+
+      BAD reply (just restates the chart):
+        "NVDA started at $X, hit a high of $Y, ended at $Z, gaining N%." —
+        DO NOT DO THIS.
 
     Args:
         ticker: Symbol like AAPL, MSFT, TSLA.
@@ -81,9 +187,9 @@ def get_price_history(ticker: str, period: str = "1y") -> dict:
             Default "1y" (covers 52 weeks). For "52-week" or "annual" use "1y".
 
     Returns:
-        {ticker, period, points: [{t: ISO date, c: close}], stats: {start, end,
-        high, low, pct_change}}. The points drive the chart; the stats are for
-        your written narrative.
+        A self-describing envelope: `{"data": {ticker, period, points, stats, "as_of": ISO},
+        "render": {"kind": "chart", "chartType": "line"}}`. The agent reads
+        `data.stats` for context; the frontend renders an inline chart card.
     """
     allowed = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
     if period not in allowed:
@@ -93,11 +199,14 @@ def get_price_history(ticker: str, period: str = "1y") -> dict:
     hist = stock.history(period=period, auto_adjust=False)
     if hist is None or hist.empty:
         return {
-            "ticker": ticker.upper(),
-            "period": period,
-            "points": [],
-            "stats": {},
-            "error": f"No price history available for {ticker.upper()}.",
+            "data": {
+                "ticker": ticker.upper(),
+                "period": period,
+                "points": [],
+                "stats": {},
+                "error": f"No price history available for {ticker.upper()}.",
+            },
+            "render": {"kind": "chart", "chartType": "line"},
         }
 
     closes = hist["Close"].dropna()
@@ -108,8 +217,12 @@ def get_price_history(ticker: str, period: str = "1y") -> dict:
     start = float(closes.iloc[0])
     end = float(closes.iloc[-1])
     pct = ((end - start) / start) * 100.0 if start else 0.0
+    last_ts = closes.index[-1]
+    # Pandas Timestamps from yfinance are tz-aware on most exchanges. isoformat()
+    # works for both naive and tz-aware variants.
+    as_of = last_ts.isoformat() if last_ts is not None else None
 
-    return {
+    data = {
         "ticker": ticker.upper(),
         "period": period,
         "points": points,
@@ -120,7 +233,9 @@ def get_price_history(ticker: str, period: str = "1y") -> dict:
             "low": round(float(closes.min()), 4),
             "pct_change": round(pct, 2),
         },
+        "as_of": as_of,
     }
+    return {"data": data, "render": {"kind": "chart", "chartType": "line"}}
 
 
 @mcp.tool()

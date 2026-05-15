@@ -40,7 +40,7 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 | Change SSE proxy behavior | [finbot/frontend/src/app/api/chat/route.ts](finbot/frontend/src/app/api/chat/route.ts) |
 | Bump frontend container | [finbot/frontend/Dockerfile](finbot/frontend/Dockerfile) |
 | Bump backend container | [finbot/Dockerfile](finbot/Dockerfile) |
-| Add a new inline UI component (e.g. heatmap) | New `kind` in `RenderPayload` union in [finbot/frontend/src/lib/threads.ts](finbot/frontend/src/lib/threads.ts), new case in [finbot/frontend/src/components/render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), and matching MCP tool + extractor in [finbot/app/agent.py](finbot/app/agent.py) |
+| Add a new inline UI component (e.g. heatmap) | (1) MCP tool returns `{data, render: {kind: "your_kind"}}` envelope in [mcp-server/server.py](mcp-server/server.py); (2) new variant in `RenderPayload` union in [finbot/frontend/src/lib/threads.ts](finbot/frontend/src/lib/threads.ts); (3) new case in [finbot/frontend/src/components/render-slot.tsx](finbot/frontend/src/components/render-slot.tsx) + component. No FastAPI change required |
 
 ## Git conventions
 

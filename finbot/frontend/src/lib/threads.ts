@@ -13,7 +13,16 @@ export interface ChartStats {
   pct_change: number;
 }
 
-export interface ChartRenderPayload {
+/** Provenance fields attached to every render payload by the FastAPI
+ * extractor (source_tool_call_id) and the MCP tool (as_of). Both optional. */
+export interface RenderPayloadProvenance {
+  /** Foundry/MCP tool-call id (e.g. "mcp_abc123") that produced this data. */
+  source_tool_call_id?: string | null;
+  /** ISO-8601 timestamp from the upstream data provider (e.g. last quote time). */
+  as_of?: string | null;
+}
+
+export interface ChartRenderPayload extends RenderPayloadProvenance {
   kind: "chart";
   chartType: "line";
   ticker: string;
@@ -22,9 +31,30 @@ export interface ChartRenderPayload {
   stats: ChartStats;
 }
 
+export interface StockCardRenderPayload extends RenderPayloadProvenance {
+  kind: "stock_card";
+  ticker: string;
+  name?: string | null;
+  exchange?: string | null;
+  sector?: string | null;
+  price: number;
+  previous_close?: number | null;
+  change?: number | null;
+  change_pct?: number | null;
+  market_cap?: number | null;
+  market_cap_tier?: string | null;
+  pe_ratio?: number | null;
+  dividend_yield?: number | null;
+  return_on_equity?: number | null;
+  revenue_growth?: number | null;
+  volume?: number | null;
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
+}
+
 /** Discriminated union for agent-driven inline UI. Add new `kind`s as the
  * agent gains new tools that produce structured outputs. */
-export type RenderPayload = ChartRenderPayload;
+export type RenderPayload = ChartRenderPayload | StockCardRenderPayload;
 
 export interface Message {
   id: string;

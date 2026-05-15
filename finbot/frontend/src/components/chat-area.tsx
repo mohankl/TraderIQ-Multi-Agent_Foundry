@@ -41,7 +41,7 @@ interface AGUIEvent {
 function isRenderPayload(value: unknown): value is RenderPayload {
   if (!value || typeof value !== "object") return false;
   const v = value as { kind?: unknown };
-  return v.kind === "chart";
+  return v.kind === "chart" || v.kind === "stock_card";
 }
 
 export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
