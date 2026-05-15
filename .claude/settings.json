@@ -22,8 +22,8 @@
       "Bash(az acr build:*)",
       "Bash(az role assignment list:*)",
       "Bash(curl -sS -o /dev/null -w:*)",
-      "Bash(curl -sS https://finbot-api*)",
-      "Bash(curl -sS https://finbot-web*)"
+      "Bash(curl -sS https://tradingiq-api*)",
+      "Bash(curl -sS https://tradingiq-web*)"
     ],
     "ask": [
       "Bash(az containerapp update:*)",
@@ -64,7 +64,7 @@
     "AZURE_RESOURCE_GROUP": "rg-dev",
     "AZURE_CONTAINER_REGISTRY": "alphastatetradingacr",
     "AZURE_CONTAINER_APPS_ENV": "trading-env",
-    "FINBOT_API_FQDN": "finbot-api.proudisland-e27da000.westus.azurecontainerapps.io",
-    "FINBOT_WEB_FQDN": "finbot-web.proudisland-e27da000.westus.azurecontainerapps.io"
+    "TRADINGIQ_API_FQDN": "tradingiq-api.proudisland-e27da000.westus.azurecontainerapps.io",
+    "TRADINGIQ_WEB_FQDN": "tradingiq-web.proudisland-e27da000.westus.azurecontainerapps.io"
   }
 }

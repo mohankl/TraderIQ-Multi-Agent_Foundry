@@ -4,9 +4,9 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 ## Live URLs (Azure, env `trading-env`)
 
-- **Frontend:** https://finbot-web.proudisland-e27da000.westus.azurecontainerapps.io
-- **API:** https://finbot-api.proudisland-e27da000.westus.azurecontainerapps.io
-- **MCP server:** internal, port 8080
+- **Frontend:** https://tradingiq-web.proudisland-e27da000.westus.azurecontainerapps.io
+- **API:** https://tradingiq-api.proudisland-e27da000.westus.azurecontainerapps.io
+- **MCP server:** https://tradingiq-mcp.proudisland-e27da000.westus.azurecontainerapps.io/mcp (`X-API-Key` required)
 
 ## Azure Resources
 
@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `17` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
+- **Agent name:** `alphastate-trading-mma-agent` (version `18` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `tradingiq-api`; v18 wires the new tradingiq-mcp URL)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -29,16 +29,17 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v9` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. Docstrings carry a "SINGLE-TOOL RULE" so the agent doesn't over-call (e.g. fundamentals during a chart query). `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions |
-| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v11` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. Tracks `any_text_emitted` so the "no text response" fallback only fires when text was truly absent. Tracing ships into Foundry's "Tracing" tab via `AIProjectInstrumentor` + Azure Monitor exporter (see Observability) |
-| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v17` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively. Consecutive same-`kind` render payloads are grouped into a 2-col grid (comparison mode); paired stock cards get a delta strip (ΔP/E, vs-52w-low, tier). Branded as **Trading IQ** with a custom network-with-dollar SVG logo and the tagline "Institutional equity research @ your voice command" |
+| `tradingiq-mcp` | `alphastatetradingacr.azurecr.io/tradingiq-mcp:v1` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. Docstrings carry a "SINGLE-TOOL RULE" so the agent doesn't over-call. `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions |
+| `tradingiq-api` | `alphastatetradingacr.azurecr.io/tradingiq-api:v1` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. Tracing **currently no-op** — `azure-monitor-opentelemetry` bootstrap hits `ImportError: cannot import name 'LogData'` and falls back to no-op tracer. See `TODO(v11.2)` |
+| `tradingiq-web` | `alphastatetradingacr.azurecr.io/tradingiq-web:v1` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively. Consecutive same-`kind` render payloads are grouped into a 2-col grid (comparison mode); paired stock cards get a delta strip (ΔP/E, vs-52w-low, tier). Branded as **Trading IQ** with a custom network-with-dollar SVG logo and the tagline "Institutional equity research @ your voice command" |
 
-All three apps use system-assigned managed identity for ACR pull.
+All three apps use **user-assigned** managed identities for ACR pull. Each MI lives in `rg-dev` and is granted at create time so the first revision can pull immediately.
 
-- `finbot-api` MI (`94355d1c-719e-4466-8137-d2e0e871b182`) has `Azure AI User` on the Foundry project.
-- `finbot-web` MI (`e30ba527-e2b9-4531-9179-bde1aa8b9096`) has `AcrPull` on the registry.
-- `finbot-web` env: `FINBOT_API_URL=https://finbot-api.proudisland-e27da000.westus.azurecontainerapps.io`
-- `finbot-api` env: `CORS_ALLOWED_ORIGINS` includes finbot-web URL + `http://localhost:3000`
+- `tradingiq-mcp-mi` (`d275c7f2-43f1-4d4b-ab6e-b3932e864e46`) — `AcrPull` on the registry.
+- `tradingiq-api-mi` (`a599ddb9-a84e-4085-b70b-596c464b0c3a`) — `AcrPull` on registry, `Azure AI User` on Foundry project, `Monitoring Metrics Publisher` on `tradingiq-ai`.
+- `tradingiq-web-mi` (`60c87c41-fec2-465d-8d3b-815b9fbe4665`) — `AcrPull` on the registry.
+- `tradingiq-web` env: `TRADINGIQ_API_URL=https://tradingiq-api.proudisland-e27da000.westus.azurecontainerapps.io`
+- `tradingiq-api` env: `CORS_ALLOWED_ORIGINS=https://tradingiq-web.proudisland-e27da000.westus.azurecontainerapps.io,http://localhost:3000`
 
 ## Repo Structure
 
@@ -85,7 +86,7 @@ Trading-Multi-Agent/
 ## Chat / Streaming Flow
 
 1. Browser → `POST /api/chat` (Next.js route) with `{threadId, messageId, content}`
-2. Next.js → `POST ${FINBOT_API_URL}/agui` with full AG-UI input envelope
+2. Next.js → `POST ${TRADINGIQ_API_URL}/agui` with full AG-UI input envelope
 3. FastAPI calls Foundry via OpenAI Responses API with `stream=True`, sets `previous_response_id` only when `threadId` starts with `resp_`
 4. FastAPI maps the Foundry stream onto AG-UI events as they arrive:
    - `response.output_item.added` (mcp_call) → `STEP_STARTED` with `step_name="tool:<name>"`
@@ -133,7 +134,7 @@ Each renderable tool's docstring carries a "DIVISION OF LABOR" section instructi
 2. Add a new variant to the `RenderPayload` union in [threads.ts](tradingiq/frontend/src/lib/threads.ts).
 3. Add a case to [render-slot.tsx](tradingiq/frontend/src/components/render-slot.tsx) and ship the component (use `RenderSource` for the provenance footer).
 4. **No FastAPI change needed** — the generic envelope detector picks it up automatically.
-5. In the Foundry portal: approve the new tool (auto-approve recommended), then save a new agent version. Pin the env var on `finbot-api`.
+5. In the Foundry portal: approve the new tool (auto-approve recommended), then save a new agent version. Pin the env var on `tradingiq-api`.
 
 ### Why AG-UI `CUSTOM`, not text-embedded JSON or `TOOL_CALL_RESULT`
 
@@ -147,13 +148,15 @@ Tracing is wired to **Azure AI Foundry's** built-in observability stack. The Fou
 
 [app/tracing.py](tradingiq/app/tracing.py) calls `AIProjectClient.telemetry.get_application_insights_connection_string()` at startup (auth via `DefaultAzureCredential`, no env-var needed), hands the string to `azure.monitor.opentelemetry.configure_azure_monitor()`, then runs `AIProjectInstrumentor().instrument()`. That single bootstrap installs the tracer provider, the App Insights exporter, FastAPI/httpx auto-instrumentation, and a GenAI auto-instrumentor that emits `gen_ai.*` spans for every `responses.create()` call made through the project's OpenAI client. Custom `agent.run` and `agent.tool` spans nest inside.
 
-Required env vars on `finbot-api`:
+Required env vars on `tradingiq-api`:
 ```sh
 AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true
 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true  # captures prompts + outputs
 ```
 
-Required RBAC (already granted): the `finbot-api` managed identity has `Monitoring Metrics Publisher` on `tradingiq-ai`. Without it, `configure_azure_monitor` can't push spans.
+Required RBAC (already granted): the `tradingiq-api-mi` managed identity has `Monitoring Metrics Publisher` on `tradingiq-ai`. Without it, `configure_azure_monitor` can't push spans.
+
+**TODO(v11.2)**: bootstrap currently fails with `ImportError: cannot import name 'LogData' from 'opentelemetry.sdk._logs'`. The exception handler keeps the app running with a no-op tracer, but no spans land in App Insights. Likely a version-skew issue between `azure-monitor-opentelemetry==1.8.2` and `opentelemetry-sdk==1.41.1` in the rebuilt `tradingiq-api:v1` image — needs investigation before tracing resumes.
 
 Viewing traces: **Azure AI Foundry portal → project → Tracing**. ~3–5 minute App Insights ingestion lag. If the project loses its App Insights connection, the bootstrap logs a warning and falls back to a no-op tracer — the app still boots.
 
@@ -162,7 +165,7 @@ Viewing traces: **Azure AI Foundry portal → project → Tracing**. ~3–5 minu
 - **`useCopilotChat` is abandoned.** The free hook has a destructuring bug — it returns `visibleMessages` but the internal hook only populates `messages`. We bypass CopilotKit entirely; the `/api/copilotkit/*` routes and `proxy.ts` are dead code kept for reference.
 - **Use `TEXT_MESSAGE_CONTENT`, never `TEXT_MESSAGE_CHUNK`, when also sending explicit `TEXT_MESSAGE_START`/`END`.** The AG-UI chunk transformer synthesizes a second `TEXT_MESSAGE_START` for the same message ID, which the event validator rejects as "already in progress".
 - **CopilotKit thread IDs are plain UUIDs.** Don't pass them to Foundry as `previous_response_id` — Foundry rejects anything that doesn't start with `resp_`.
-- **New MCP tools require explicit Foundry approval AND a new agent version.** Adding a tool to `mcp-server/server.py` and rolling `finbot-mcp` is not enough. In the Foundry portal you must (1) approve the new tool (or set it to "auto-approve"), and (2) **save as a new agent version**. Then update `AZURE_EXISTING_AGENT_VERSION` on `finbot-api` to point at the new version. Without the new version, the agent emits `mcp_approval_request` items instead of calling the tool, and `response.output_text` is empty.
+- **New MCP tools require explicit Foundry approval AND a new agent version.** Adding a tool to `mcp-server/server.py` and rolling `tradingiq-mcp` is not enough. In the Foundry portal you must (1) approve the new tool (or set it to "auto-approve"), and (2) **save as a new agent version**. Then update `AZURE_EXISTING_AGENT_VERSION` on `tradingiq-api` to point at the new version. Without the new version, the agent emits `mcp_approval_request` items instead of calling the tool, and `response.output_text` is empty.
 
 ## Common Commands
 
@@ -177,21 +180,21 @@ cd tradingiq/frontend && npm run dev
 Rebuild + redeploy frontend:
 ```sh
 cd tradingiq/frontend
-az acr build --registry alphastatetradingacr --image finbot-web:vN --platform linux/amd64 .
-az containerapp update -n finbot-web -g rg-dev --image alphastatetradingacr.azurecr.io/finbot-web:vN
+az acr build --registry alphastatetradingacr --image tradingiq-web:vN --platform linux/amd64 .
+az containerapp update -n tradingiq-web -g rg-dev --image alphastatetradingacr.azurecr.io/tradingiq-web:vN
 ```
 
 Rebuild + redeploy API:
 ```sh
 cd tradingiq
-az acr build --registry alphastatetradingacr --image finbot-api:vN --platform linux/amd64 .
-az containerapp update -n finbot-api -g rg-dev --image alphastatetradingacr.azurecr.io/finbot-api:vN
+az acr build --registry alphastatetradingacr --image tradingiq-api:vN --platform linux/amd64 .
+az containerapp update -n tradingiq-api -g rg-dev --image alphastatetradingacr.azurecr.io/tradingiq-api:vN
 ```
 
 Tail logs:
 ```sh
-az containerapp logs show -n finbot-api -g rg-dev --tail 60
-az containerapp logs show -n finbot-web -g rg-dev --tail 60
+az containerapp logs show -n tradingiq-api -g rg-dev --tail 60
+az containerapp logs show -n tradingiq-web -g rg-dev --tail 60
 ```
 
 ## Git Tags
@@ -211,6 +214,8 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v10.5` — Trading IQ rebrand + visible "Thinking…" indicator. (1) Renames the app from "FinBot" to "Trading IQ" across the sidebar, landing screen, page title, and favicon, with a custom SVG logo (six outer nodes + spokes + central agent disc with "$"). (2) Adds a "Thinking…" label next to the bouncing dots in the pre-first-event window so the user has continuous textual feedback from the moment they hit send (web:v12)
 - `v10.6` — Comparison cards + UI polish. (1) `groupRenderSlots()` walks the render payloads on a persisted message (and the in-flight bubble's segments) and merges consecutive same-`kind` payloads into a `RenderGroup`; pairs render in a 2-col grid. (2) Stock-card pairs get a `StockCardDeltaRow` underneath: ΔP/E with a "X richer" hint, vs-52-week-low % for each ticker, and a market-cap tier compare. Chart pairs use the same grid without a delta row. Auto-detection means no MCP or agent change needed. (3) `RenderSource` footer no longer shows the `mcp_…` tool-call id and the `as_of` line is now date-only (no time/timezone clutter). (4) Sidebar/title tagline switched to "Institutional equity research @ your voice command". (5) Typing-indicator label switched to "Data analysis & Intelligence at work" while the LLM is processing (web:v17)
 - `v10.7` — Foundry-native observability. Drops the unused OTLP-HTTP exporter and wires tracing into Azure AI Foundry's built-in observability path. `tracing.py` now asks the project SDK for the attached App Insights connection string at runtime (`AIProjectClient.telemetry.get_application_insights_connection_string()`), hands it to `configure_azure_monitor`, and runs `AIProjectInstrumentor().instrument()` so every Foundry Responses-API call emits `gen_ai.*` spans visible in the Foundry portal's Tracing tab. New App Insights resource `tradingiq-ai` + Log Analytics workspace `tradingiq-logs` in `rg-dev`. `finbot-api` MI granted `Monitoring Metrics Publisher` on the AI resource. Two new env vars on the Container App: `AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` (api:v11)
+- `v11.0` — Source rename `finbot/` → `tradingiq/`. Frontend env `FINBOT_API_URL` → `TRADINGIQ_API_URL`, localStorage keys renamed, CopilotKit slug `finbotAgent` → `tradingIqAgent`, FastAPI title "FinBot API" → "Trading IQ API", MCP server `finbot-tools` → `tradingiq-tools`. Azure resources still on `finbot-*` names at this point. Source-only PR; no infra impact.
+- `v11.1` — Azure resource cutover. New Container Apps `tradingiq-{mcp,api,web}` on user-assigned MIs (`tradingiq-{mcp,api,web}-mi`); new ACR repos `tradingiq-{mcp,api,web}:v1`; Foundry agent **v18** points at `tradingiq-mcp`; `finbot-{mcp,api,web}` deleted. Frontend env var migrated to `TRADINGIQ_API_URL`. CORS updated. **Tracing currently no-op** on tradingiq-api due to `ImportError: cannot import name 'LogData' from 'opentelemetry.sdk._logs'` — exception-handled, app still serves. See `TODO(v11.2)` (mcp:v1, api:v1, web:v1, agent v18)
 
 ## Keeping This File Current
 

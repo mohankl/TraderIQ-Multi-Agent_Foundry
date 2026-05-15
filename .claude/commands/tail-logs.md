@@ -9,9 +9,9 @@ Resolve the app name:
 
 | Argument | App |
 |---|---|
-| `api` or empty | `finbot-api` |
-| `web` | `finbot-web` |
-| `mcp` | `finbot-mcp` |
+| `api` or empty | `tradingiq-api` |
+| `web` | `tradingiq-web` |
+| `mcp` | `tradingiq-mcp` |
 
 Run:
 

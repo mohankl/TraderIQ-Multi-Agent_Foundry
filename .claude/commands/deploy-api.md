@@ -1,6 +1,6 @@
 ---
 name: deploy-api
-description: Build the FastAPI image with ACR Tasks and roll it out to finbot-api. Pass an optional tag argument (e.g. /deploy-api v4); defaults to next available tag.
+description: Build the FastAPI image with ACR Tasks and roll it out to tradingiq-api. Pass an optional tag argument (e.g. /deploy-api v4); defaults to next available tag.
 ---
 
 You are deploying the FastAPI backend. Follow these steps and report back at each gate.
@@ -9,27 +9,27 @@ You are deploying the FastAPI backend. Follow these steps and report back at eac
 
 1. Decide the tag.
    - If `$ARGUMENTS` is set, use it verbatim as `TAG` (e.g. `v4`).
-   - Otherwise inspect existing tags with `az acr repository show-tags -n alphastatetradingacr --repository finbot-api -o tsv` and propose the next `vN`.
+   - Otherwise inspect existing tags with `az acr repository show-tags -n alphastatetradingacr --repository tradingiq-api -o tsv` and propose the next `vN`.
 2. Confirm the target tag with the user before building.
 3. Run the build:
    ```sh
    cd tradingiq
-   az acr build --registry alphastatetradingacr --image finbot-api:$TAG --platform linux/amd64 .
+   az acr build --registry alphastatetradingacr --image tradingiq-api:$TAG --platform linux/amd64 .
    ```
    Run it with `run_in_background: true` — ACR builds take 1-3 minutes.
 4. Wait for the build to finish (you'll be notified).
-5. Confirm the image appeared in ACR: `az acr repository show-tags -n alphastatetradingacr --repository finbot-api -o tsv | grep $TAG`.
+5. Confirm the image appeared in ACR: `az acr repository show-tags -n alphastatetradingacr --repository tradingiq-api -o tsv | grep $TAG`.
 6. Ask the user for explicit approval before rolling, since this updates prod.
 7. Roll out:
    ```sh
-   az containerapp update -n finbot-api -g rg-dev --image alphastatetradingacr.azurecr.io/finbot-api:$TAG
+   az containerapp update -n tradingiq-api -g rg-dev --image alphastatetradingacr.azurecr.io/tradingiq-api:$TAG
    ```
 8. Smoke test:
    ```sh
-   curl -sS -o /dev/null -w "%{http_code}\n" https://finbot-api.proudisland-e27da000.westus.azurecontainerapps.io/health
+   curl -sS -o /dev/null -w "%{http_code}\n" https://tradingiq-api.proudisland-e27da000.westus.azurecontainerapps.io/health
    ```
    Expect `200`.
-9. Tail logs briefly: `az containerapp logs show -n finbot-api -g rg-dev --tail 30`.
+9. Tail logs briefly: `az containerapp logs show -n tradingiq-api -g rg-dev --tail 30`.
 10. Report the new tag, the rollout result, and any log warnings.
 
 ## Notes

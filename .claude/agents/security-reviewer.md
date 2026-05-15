@@ -24,12 +24,12 @@ You are a security reviewer for the Trading Multi-Agent project.
    - Confirm dev (`http://localhost:3000`) and the prod web FQDN are present, nothing else.
 
 4. **Ingress / network exposure**
-   - `az containerapp show ... --query "properties.configuration.ingress"` — confirm `external: true` only on `finbot-api` and `finbot-web`. MCP should be internal-only.
+   - `az containerapp show ... --query "properties.configuration.ingress"` — confirm `external: true` only on `tradingiq-api` and `tradingiq-web`. MCP should be internal-only.
 
 5. **Managed identity scope**
    - `az role assignment list --assignee <principalId> --all -o table` for each app's MI.
-   - `finbot-api` should have `Azure AI User` on the Foundry project — and nothing broader (no `Contributor` on the subscription).
-   - `finbot-web` should have `AcrPull` on the registry only.
+   - `tradingiq-api` should have `Azure AI User` on the Foundry project — and nothing broader (no `Contributor` on the subscription).
+   - `tradingiq-web` should have `AcrPull` on the registry only.
 
 6. **Container hardening**
    - `runAsNonRoot` user in the frontend Dockerfile (already `nextjs` uid 1001 — good).

@@ -11,9 +11,9 @@ You are reconciling `CLAUDE.md` (and its mirror `AGENTS.md`) with the real deplo
 2. Cross-check the **live facts** that go stale fastest:
    - Container app image tags
      ```sh
-     az containerapp show -n finbot-api -g rg-dev --query "properties.template.containers[0].image" -o tsv
-     az containerapp show -n finbot-web -g rg-dev --query "properties.template.containers[0].image" -o tsv
-     az containerapp show -n finbot-mcp -g rg-dev --query "properties.template.containers[0].image" -o tsv
+     az containerapp show -n tradingiq-api -g rg-dev --query "properties.template.containers[0].image" -o tsv
+     az containerapp show -n tradingiq-web -g rg-dev --query "properties.template.containers[0].image" -o tsv
+     az containerapp show -n tradingiq-mcp -g rg-dev --query "properties.template.containers[0].image" -o tsv
      ```
    - Public FQDNs
      ```sh
@@ -21,11 +21,11 @@ You are reconciling `CLAUDE.md` (and its mirror `AGENTS.md`) with the real deplo
      ```
    - Foundry agent version
      ```sh
-     az containerapp show -n finbot-api -g rg-dev --query "properties.template.containers[0].env[?name=='AZURE_EXISTING_AGENT_VERSION'].value" -o tsv
+     az containerapp show -n tradingiq-api -g rg-dev --query "properties.template.containers[0].env[?name=='AZURE_EXISTING_AGENT_VERSION'].value" -o tsv
      ```
    - CORS allowed origins
      ```sh
-     az containerapp show -n finbot-api -g rg-dev --query "properties.template.containers[0].env[?name=='CORS_ALLOWED_ORIGINS'].value" -o tsv
+     az containerapp show -n tradingiq-api -g rg-dev --query "properties.template.containers[0].env[?name=='CORS_ALLOWED_ORIGINS'].value" -o tsv
      ```
    - Repo structure (compare to actual): `find tradingiq -maxdepth 3 -type d`
 3. List the deltas you found vs `CLAUDE.md`. Be specific (line numbers, before/after).
