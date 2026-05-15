@@ -24,7 +24,7 @@ export function Sidebar({ threads, activeThreadId, onNewChat, onSelectThread, on
         <BrandLogo size="md" className="text-primary" />
         <div>
           <h1 className="text-sm font-semibold tracking-tight">Trading IQ</h1>
-          <p className="text-xs text-muted-foreground">Equity Research Agent</p>
+          <p className="text-xs text-muted-foreground">Institutional equity research @ your voice command</p>
         </div>
       </div>
 

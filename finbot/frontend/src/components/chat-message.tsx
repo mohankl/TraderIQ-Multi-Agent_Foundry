@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Message } from "@/lib/threads";
 import { cn } from "@/lib/utils";
 import { TrendingUp, User } from "lucide-react";
-import { RenderSlot } from "@/components/render-slot";
+import { groupRenderSlots, RenderGroup } from "@/components/render-group";
 
 interface ChatMessageProps {
   message: Message;
@@ -46,9 +46,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
               </div>
             )}
-            {message.renderSlots?.map((slot, i) => (
-              <RenderSlot key={i} payload={slot} />
-            ))}
+            {message.renderSlots &&
+              groupRenderSlots(message.renderSlots).map((group, i) => (
+                <RenderGroup key={i} group={group} />
+              ))}
           </>
         )}
       </div>
@@ -56,7 +57,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   );
 }
 
-export function TypingIndicator({ label = "Thinking" }: { label?: string }) {
+export function TypingIndicator({ label = "Data analysis & Intelligence at work" }: { label?: string }) {
   return (
     <div className="flex items-start gap-3 py-4">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">

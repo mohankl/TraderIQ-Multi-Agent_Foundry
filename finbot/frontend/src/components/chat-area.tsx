@@ -10,7 +10,7 @@ import {
 } from "@/lib/threads";
 import { ChatMessage, TypingIndicator } from "@/components/chat-message";
 import { StepPill, type StepState } from "@/components/step-pill";
-import { RenderSlot } from "@/components/render-slot";
+import { RenderGroup, type RenderGroupRun } from "@/components/render-group";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Send, BarChart2 } from "lucide-react";
@@ -84,6 +84,42 @@ function appendOrCreateText(
   return [...segments, { kind: "text", text: delta }];
 }
 
+/** Walk live.segments and merge consecutive `render` segments of the same
+ * `kind` into one grouped chunk. Step pills and text segments stay as-is.
+ * This is what enables side-by-side comparison cards in the in-flight
+ * bubble, mirroring the grouping the persisted message gets in
+ * chat-message.tsx. */
+type LiveDisplayChunk =
+  | { kind: "step"; step: StepState }
+  | { kind: "text"; text: string }
+  | { kind: "renderGroup"; group: RenderGroupRun };
+
+function chunkLiveSegments(segments: LiveSegment[]): LiveDisplayChunk[] {
+  const chunks: LiveDisplayChunk[] = [];
+  for (const seg of segments) {
+    if (seg.kind === "render") {
+      const last = chunks[chunks.length - 1];
+      if (
+        last &&
+        last.kind === "renderGroup" &&
+        last.group.kind === seg.payload.kind
+      ) {
+        last.group.items.push(seg.payload);
+      } else {
+        chunks.push({
+          kind: "renderGroup",
+          group: { kind: seg.payload.kind, items: [seg.payload] },
+        });
+      }
+    } else if (seg.kind === "step") {
+      chunks.push({ kind: "step", step: seg.step });
+    } else {
+      chunks.push({ kind: "text", text: seg.text });
+    }
+  }
+  return chunks;
+}
+
 function flattenLive(live: LiveAssistant): { text: string; renderSlots: RenderPayload[] } {
   const textChunks: string[] = [];
   const renderSlots: RenderPayload[] = [];
@@ -121,19 +157,19 @@ function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
         <TrendingUp className="h-4 w-4" />
       </div>
       <div className="flex max-w-[80%] flex-col gap-2 text-sm text-foreground">
-        {live.segments.map((seg, i) => {
-          if (seg.kind === "step") {
-            return <StepPill key={i} step={seg.step} />;
+        {chunkLiveSegments(live.segments).map((chunk, i) => {
+          if (chunk.kind === "step") {
+            return <StepPill key={i} step={chunk.step} />;
           }
-          if (seg.kind === "render") {
-            return <RenderSlot key={i} payload={seg.payload} />;
+          if (chunk.kind === "renderGroup") {
+            return <RenderGroup key={i} group={chunk.group} />;
           }
           return (
             <div
               key={i}
               className="prose prose-sm dark:prose-invert max-w-none rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 leading-relaxed shadow-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{seg.text}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{chunk.text}</ReactMarkdown>
             </div>
           );
         })}

@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Trading IQ — Equity Research Agent",
+  title: "Trading IQ — Institutional equity research @ your voice command",
   description: "AI-powered equity research analyst. Get structured stock briefs instantly.",
   icons: { icon: "/trading-iq-logo.svg" },
 };
