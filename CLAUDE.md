@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `19` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `tradingiq-api`; v19 carries the rotated `mcp-api-key` header value)
+- **Agent name:** `alphastate-trading-mma-agent` (version `20` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `tradingiq-api`; v20 carries the v12.0-rotated `mcp-api-key` header value)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -29,9 +29,9 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `tradingiq-mcp` | `alphastatetradingacr.azurecr.io/tradingiq-mcp:v1` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. Docstrings carry a "SINGLE-TOOL RULE" so the agent doesn't over-call. `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions |
-| `tradingiq-api` | `alphastatetradingacr.azurecr.io/tradingiq-api:v2` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. Tracing ships into Foundry's "Tracing" tab via `AIProjectInstrumentor` + Azure Monitor exporter (see Observability) |
-| `tradingiq-web` | `alphastatetradingacr.azurecr.io/tradingiq-web:v1` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively. Consecutive same-`kind` render payloads are grouped into a 2-col grid (comparison mode); paired stock cards get a delta strip (ΔP/E, vs-52w-low, tier). Branded as **Trading IQ** with a custom network-with-dollar SVG logo and the tagline "Institutional equity research @ your voice command" |
+| `tradingiq-mcp` | `alphastatetradingacr.azurecr.io/tradingiq-mcp:v2` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. Docstrings carry a "SINGLE-TOOL RULE" so the agent doesn't over-call. `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions |
+| `tradingiq-api` | `alphastatetradingacr.azurecr.io/tradingiq-api:v3` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. v12.0 split the Foundry→AG-UI mapping into pure `app/event_mapper.py` (unit-testable); `app/agent.py` is now a thin orchestrator. Tracing ships into Foundry's "Tracing" tab via `AIProjectInstrumentor` + Azure Monitor exporter (see Observability) |
+| `tradingiq-web` | `alphastatetradingacr.azurecr.io/tradingiq-web:v2` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively. Consecutive same-`kind` render payloads are grouped into a 2-col grid (comparison mode); paired stock cards get a delta strip (ΔP/E, vs-52w-low, tier). v12.0 extracted the live-segment helpers into `src/lib/agui-segments.ts` and removed the abandoned CopilotKit wrapper. Branded as **Trading IQ** with a custom network-with-dollar SVG logo and the tagline "Institutional equity research @ your voice command" |
 
 All three apps use **user-assigned** managed identities for ACR pull. Each MI lives in `rg-dev` and is granted at create time so the first revision can pull immediately.
 
@@ -48,7 +48,9 @@ Trading-Multi-Agent/
   tradingiq/
     Dockerfile              # FastAPI image (python:3.13-slim)
     app/
-      agent.py              # AIProjectClient + OpenAI Responses API; AG-UI SSE
+      agent.py              # AIProjectClient + Responses API; tracing + SSE encoding + fallback splice
+      event_mapper.py       # PURE Foundry-event → AG-UI-event mapper (unit-testable)
+      tracing.py            # AIProjectInstrumentor + Azure Monitor bootstrap
       config.py             # AZURE_EXISTING_AIPROJECT_ENDPOINT, AZURE_EXISTING_AGENT_NAME, AZURE_EXISTING_AGENT_VERSION
       main.py               # /health + /agui SSE endpoint; CORS via CORS_ALLOWED_ORIGINS
     frontend/               # Next.js 16 (Turbopack) + Tailwind v4
@@ -57,16 +59,21 @@ Trading-Multi-Agent/
       src/
         app/
           api/chat/route.ts # SSE proxy: POSTs to ${TRADINGIQ_API_URL}/agui
-          api/copilotkit/   # legacy CopilotKit handlers — kept but unused
           layout.tsx
           page.tsx
         components/
-          chat-area.tsx     # parses AG-UI events directly; renders streaming reply
+          chat-area.tsx     # SSE-read loop, LiveAssistantBubble, ChatArea
+          render-group.tsx  # groups consecutive same-kind render slots (comparison cards)
+          stock-card.tsx    # boarding-pass fundamentals card
+          chart-card.tsx    # Recharts price-history card
+          step-pill.tsx     # per-tool progress pill in the live bubble
         lib/
+          agui-segments.ts  # PURE live-segment helpers (appendOrCreateText, chunkLiveSegments, flattenLive)
           threads.ts        # localStorage threads; Thread.foreignId = Foundry response_id
   mcp-server/
     server.py               # FastMCP, stateless_http, X-API-Key auth
     Dockerfile
+  ENTRA-ROLLOUT.md          # Phase 0 spike + Phase 1 app-registration spec (planning, not built)
 ```
 
 ## MCP Tools
@@ -218,6 +225,8 @@ az containerapp logs show -n tradingiq-web -g rg-dev --tail 60
 - `v11.1` — Azure resource cutover. New Container Apps `tradingiq-{mcp,api,web}` on user-assigned MIs (`tradingiq-{mcp,api,web}-mi`); new ACR repos `tradingiq-{mcp,api,web}:v1`; Foundry agent **v18** points at `tradingiq-mcp`; `finbot-{mcp,api,web}` deleted. Frontend env var migrated to `TRADINGIQ_API_URL`. CORS updated. **Tracing currently no-op** on tradingiq-api due to `ImportError: cannot import name 'LogData' from 'opentelemetry.sdk._logs'` — exception-handled, app still serves. Fixed in v11.2 (mcp:v1, api:v1, web:v1, agent v18)
 - `v11.2` — Restore tracing on the new stack. Root cause was a pip-resolved dep skew: `azure-monitor-opentelemetry-exporter==1.0.0b45` (resolved by uv from the old constraints) imports `LogData` from `opentelemetry.sdk._logs`, but that symbol was removed in `opentelemetry-sdk==1.41.1`. Pinned `pyproject.toml` to a verified-compatible set: `azure-monitor-opentelemetry>=1.8.8`, `azure-monitor-opentelemetry-exporter>=1.0.0b52`, `opentelemetry-sdk>=1.40.0,<1.41`. Regenerated uv.lock + requirements.txt. Also added `OTEL_SERVICE_NAME=tradingiq-api` env so spans get the correct AppRoleName. Verified end-to-end: 25+ spans landed in App Insights within minutes of deploy, including `responsesapi` GenAI semconv spans with full `gen_ai.agent.id`, `gen_ai.response.id`, `microsoft.foundry.project.id`, and captured prompts/outputs (api:v2)
 - `v11.3` — Rotated `mcp-api-key` (the original value had been pulled into a chat transcript during the v11.1 cutover). New secret value set on `tradingiq-mcp`, then Foundry agent saved as **v19** with the new `X-API-Key` header, then `AZURE_EXISTING_AGENT_VERSION` bumped from 18 → 19 on `tradingiq-api`. Brief downtime between secret rotation and agent v19 pin. Verified via E2E: NVDA fundamentals query succeeded post-rotation. No source changes apart from docs (api:v2 unchanged, agent v19)
+- `v11.4` — System-architect README. Replaces the placeholder root `README.md` with a 635-line systems doc: two Mermaid diagrams (3-app + Foundry + Azure Monitor flowchart; single-chat-turn sequence), Foundry section with project/agent/model inventory, four-boundary trust model, identity/RBAC matrix for the three user-assigned MIs, observability section with span-attribute catalog + KQL probe + LogData ImportError pin, and a roadmap listing Entra ID, M365 publishing, comparison v2, and voice input as not-built. Docs-only; no infra change
+- `v12.0` — Cleanup, refactor, deploy + secret rotation. **Three commits in one release.** (1) `chore: remove dead code and configure project linting` — deleted the abandoned CopilotKit routes + `<CopilotKit>` wrapper in layout.tsx (and four `@copilotkit/*` / `@ag-ui/client` npm packages — 491 transitive packages gone), deleted `trading-tools-agent/` and root `main.py`, added ruff + pytest as `[dependency-groups.dev]` in `pyproject.toml`, ran ruff auto-fixes (`UP035` `UP043` `UP017` `I001`), fixed one pre-existing `react-hooks/set-state-in-effect` error, removed an unreachable useEffect in `chat-area.tsx`. (2) `refactor: extract pure event-mapping logic into testable modules` — pulled Foundry→AG-UI mapping out of `agent.py` into `app/event_mapper.py` (`map_foundry_stream`, `extract_render_payload`, pure, no clients/tracer), and the live-segment helpers out of `chat-area.tsx` into `src/lib/agui-segments.ts` (`appendOrCreateText`, `chunkLiveSegments`, `flattenLive`). `agent.py` shrank from 289 → 141 lines; `chat-area.tsx` from 487 → 385. Behavior-preserving. (3) **Deploy + MCP secret rotation.** Built and rolled `tradingiq-api:v3`, `tradingiq-web:v2`, `tradingiq-mcp:v2`. Playwright E2E found a 401 from MCP: the original v11.3 secret value had drifted out of sync between the Container App secret store and what the new MCP revision had loaded in process memory. Rotated `mcp-api-key` fresh, saved Foundry agent as **v20** with the new `X-API-Key` header, forced `az containerapp revision restart` on MCP so the running Python process re-read `os.environ.get("MCP_API_KEY")`, bumped `AZURE_EXISTING_AGENT_VERSION` 19 → 20 on `tradingiq-api`. E2E rerun passed: MSFT fundamentals + 6-month chart of MSFT both rendered with stock card / chart card and analyst brief in a single thread. Lesson: secret rotation alone is not enough — running container caches env at module load, so a forced replica restart is mandatory afterward (mcp:v2, api:v3, web:v2, agent v20)
 
 ## Keeping This File Current
 

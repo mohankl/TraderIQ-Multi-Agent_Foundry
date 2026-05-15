@@ -9,13 +9,13 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 - Repo layout
 - Auth model
 - The Foundry → FastAPI → Next.js streaming flow
-- Known caveats (CopilotKit destructuring bug, AG-UI event invariants, Foundry `resp_` prefix rule)
+- Known caveats (AG-UI event invariants, Foundry `resp_` prefix rule)
 
 ## What you should do as an agent in this repo
 
 1. **Read [CLAUDE.md](CLAUDE.md) before any non-trivial change.** Don't reconstruct facts that already live there.
 2. **Confirm before mutating shared cloud resources.** That includes `az containerapp update`, `az role assignment create`, `git push`, image rollouts. Local dev (`uv run uvicorn`, `npm run dev`) is fine without asking.
-3. **Match the existing event invariants** when touching the streaming path. The combo `TEXT_MESSAGE_START` + `TEXT_MESSAGE_CONTENT` (deltas) + `TEXT_MESSAGE_END` is what the frontend parser expects, and tool calls are bracketed with `STEP_STARTED`/`STEP_FINISHED` (with `CUSTOM ui.render` in between when the tool returns a `{data, render}` envelope). Don't introduce `TEXT_MESSAGE_CHUNK` into a flow that already emits explicit start/end — see the caveat in CLAUDE.md.
+3. **Match the existing event invariants** when touching the streaming path. The combo `TEXT_MESSAGE_START` + `TEXT_MESSAGE_CONTENT` (deltas) + `TEXT_MESSAGE_END` is what the frontend parser expects, and tool calls are bracketed with `STEP_STARTED`/`STEP_FINISHED` (with `CUSTOM ui.render` in between when the tool returns a `{data, render}` envelope). Don't introduce `TEXT_MESSAGE_CHUNK` into a flow that already emits explicit start/end — see the caveat in CLAUDE.md. The mapping logic lives in the pure `tradingiq/app/event_mapper.py` (v12.0+) — easier to read and unit-test than the wider `agent.py` orchestrator.
 4. **Update CLAUDE.md when reality drifts.** If you bump an image tag, change an env var, add a tool to the MCP server, or change an FQDN, also update CLAUDE.md (or run `/update-claude-md` if you're in Claude Code).
 5. **Avoid bringing in new top-level deps.** Both `tradingiq/` and `tradingiq/frontend/` have a deliberate dependency set. If you genuinely need something new, ask first.
 
@@ -27,18 +27,20 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 | Foundry agent invocation | OpenAI Responses API via `AIProjectClient(...).get_openai_client()` |
 | MCP tools | `FastMCP` with `stateless_http`, `X-API-Key` header |
 | Frontend streaming | Browser fetch → Next.js `/api/chat` route → FastAPI `/agui` (AG-UI SSE) |
-| State machine for AG-UI events | See `@ag-ui/client` `verifyEvents` operator — events must be properly nested |
+| State machine for AG-UI events | Events must be properly nested: `RUN_STARTED` first, `STEP_STARTED`/`STEP_FINISHED` paired around tool calls, `TEXT_MESSAGE_START`/`CONTENT`/`END` paired around model text, `RUN_FINISHED` last. See `tradingiq/app/event_mapper.py` for the canonical mapping |
 | Foundry streaming | OpenAI Responses API with `stream=True`; iterate the synchronous generator, map `response.output_item.*` and `response.output_text.delta` events to AG-UI |
-| Tracing | OpenTelemetry SDK + OTLP HTTP exporter; set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable, or leave unset for no-op |
+| Tracing | `AIProjectInstrumentor` + `azure.monitor.opentelemetry.configure_azure_monitor` — bootstrapped in `tradingiq/app/tracing.py` from the App Insights connection string the Foundry project SDK returns at runtime. Spans land in the Foundry portal's Tracing tab (~3–5 min App Insights ingestion lag) |
 
 ## Where to make different kinds of changes
 
 | Change | File |
 |---|---|
 | Add a new MCP tool | [mcp-server/server.py](mcp-server/server.py) |
-| Change the Foundry call shape | [tradingiq/app/agent.py](tradingiq/app/agent.py) |
+| Change the Foundry call shape (kwargs, tracer attrs, fallback splice) | [tradingiq/app/agent.py](tradingiq/app/agent.py) |
+| Change the Foundry-event → AG-UI mapping (per-event logic) | [tradingiq/app/event_mapper.py](tradingiq/app/event_mapper.py) |
 | Add an HTTP endpoint to FastAPI | [tradingiq/app/main.py](tradingiq/app/main.py) |
-| Change chat UI behavior | [tradingiq/frontend/src/components/chat-area.tsx](tradingiq/frontend/src/components/chat-area.tsx) |
+| Change chat UI behavior (SSE-read loop, in-flight bubble) | [tradingiq/frontend/src/components/chat-area.tsx](tradingiq/frontend/src/components/chat-area.tsx) |
+| Change live-segment chunking / flatten logic | [tradingiq/frontend/src/lib/agui-segments.ts](tradingiq/frontend/src/lib/agui-segments.ts) |
 | Change SSE proxy behavior | [tradingiq/frontend/src/app/api/chat/route.ts](tradingiq/frontend/src/app/api/chat/route.ts) |
 | Bump frontend container | [tradingiq/frontend/Dockerfile](tradingiq/frontend/Dockerfile) |
 | Bump backend container | [tradingiq/Dockerfile](tradingiq/Dockerfile) |
