@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `18` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `tradingiq-api`; v18 wires the new tradingiq-mcp URL)
+- **Agent name:** `alphastate-trading-mma-agent` (version `19` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `tradingiq-api`; v19 carries the rotated `mcp-api-key` header value)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -217,6 +217,7 @@ az containerapp logs show -n tradingiq-web -g rg-dev --tail 60
 - `v11.0` — Source rename `finbot/` → `tradingiq/`. Frontend env `FINBOT_API_URL` → `TRADINGIQ_API_URL`, localStorage keys renamed, CopilotKit slug `finbotAgent` → `tradingIqAgent`, FastAPI title "FinBot API" → "Trading IQ API", MCP server `finbot-tools` → `tradingiq-tools`. Azure resources still on `finbot-*` names at this point. Source-only PR; no infra impact.
 - `v11.1` — Azure resource cutover. New Container Apps `tradingiq-{mcp,api,web}` on user-assigned MIs (`tradingiq-{mcp,api,web}-mi`); new ACR repos `tradingiq-{mcp,api,web}:v1`; Foundry agent **v18** points at `tradingiq-mcp`; `finbot-{mcp,api,web}` deleted. Frontend env var migrated to `TRADINGIQ_API_URL`. CORS updated. **Tracing currently no-op** on tradingiq-api due to `ImportError: cannot import name 'LogData' from 'opentelemetry.sdk._logs'` — exception-handled, app still serves. Fixed in v11.2 (mcp:v1, api:v1, web:v1, agent v18)
 - `v11.2` — Restore tracing on the new stack. Root cause was a pip-resolved dep skew: `azure-monitor-opentelemetry-exporter==1.0.0b45` (resolved by uv from the old constraints) imports `LogData` from `opentelemetry.sdk._logs`, but that symbol was removed in `opentelemetry-sdk==1.41.1`. Pinned `pyproject.toml` to a verified-compatible set: `azure-monitor-opentelemetry>=1.8.8`, `azure-monitor-opentelemetry-exporter>=1.0.0b52`, `opentelemetry-sdk>=1.40.0,<1.41`. Regenerated uv.lock + requirements.txt. Also added `OTEL_SERVICE_NAME=tradingiq-api` env so spans get the correct AppRoleName. Verified end-to-end: 25+ spans landed in App Insights within minutes of deploy, including `responsesapi` GenAI semconv spans with full `gen_ai.agent.id`, `gen_ai.response.id`, `microsoft.foundry.project.id`, and captured prompts/outputs (api:v2)
+- `v11.3` — Rotated `mcp-api-key` (the original value had been pulled into a chat transcript during the v11.1 cutover). New secret value set on `tradingiq-mcp`, then Foundry agent saved as **v19** with the new `X-API-Key` header, then `AZURE_EXISTING_AGENT_VERSION` bumped from 18 → 19 on `tradingiq-api`. Brief downtime between secret rotation and agent v19 pin. Verified via E2E: NVDA fundamentals query succeeded post-rotation. No source changes apart from docs (api:v2 unchanged, agent v19)
 
 ## Keeping This File Current
 
