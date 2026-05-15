@@ -13,10 +13,17 @@ dependencies = [
     "azure-ai-projects>=2.1.0",
     "azure-identity>=1.20.0",
     "ag-ui-protocol>=0.1.0",
-    "opentelemetry-api>=1.30.0",
-    "opentelemetry-sdk>=1.30.0",
+    # OTel pins resolved as a known-compatible set (May 2026). The
+    # azure-monitor-opentelemetry-exporter <=1.0.0b45 imports `LogData`
+    # from opentelemetry.sdk._logs which was removed in sdk 1.41, so we
+    # need the exporter at 1.0.0b50+ AND opentelemetry-sdk pinned <1.41
+    # OR the matching newer exporter. The 1.8.8 / 1.40.0 set was verified
+    # to import + initialize cleanly. Don't relax these without testing.
+    "opentelemetry-api>=1.40.0,<1.41",
+    "opentelemetry-sdk>=1.40.0,<1.41",
     "opentelemetry-instrumentation-fastapi>=0.51b0",
     "opentelemetry-instrumentation-httpx>=0.51b0",
-    "azure-monitor-opentelemetry>=1.6.0",
+    "azure-monitor-opentelemetry>=1.8.8",
+    "azure-monitor-opentelemetry-exporter>=1.0.0b52",
     "azure-core-tracing-opentelemetry>=1.0.0b11",
 ]
