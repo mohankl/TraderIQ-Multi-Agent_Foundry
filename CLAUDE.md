@@ -30,7 +30,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 | App | Image | Port | Purpose |
 |---|---|---|---|
 | `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v9` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. Docstrings carry a "SINGLE-TOOL RULE" so the agent doesn't over-call (e.g. fundamentals during a chart query). `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions |
-| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v10` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. Tracks `any_text_emitted` so the "no text response" fallback only fires when text was truly absent. OpenTelemetry traces on `agent.run` |
+| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v11` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. Tracks `any_text_emitted` so the "no text response" fallback only fires when text was truly absent. Tracing ships into Foundry's "Tracing" tab via `AIProjectInstrumentor` + Azure Monitor exporter (see Observability) |
 | `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v17` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively. Consecutive same-`kind` render payloads are grouped into a 2-col grid (comparison mode); paired stock cards get a delta strip (ΔP/E, vs-52w-low, tier). Branded as **Trading IQ** with a custom network-with-dollar SVG logo and the tagline "Institutional equity research @ your voice command" |
 
 All three apps use system-assigned managed identity for ACR pull.
@@ -143,19 +143,19 @@ Each renderable tool's docstring carries a "DIVISION OF LABOR" section instructi
 
 ## Observability
 
-FastAPI is wired for OpenTelemetry in [app/tracing.py](finbot/app/tracing.py). On startup `init_tracing()` configures an OTLP-HTTP exporter and `instrument_app()` auto-instruments FastAPI request spans and httpx outbound calls (the OpenAI/Foundry client uses httpx under the hood, so every Foundry round-trip becomes a child span).
+Tracing is wired to **Azure AI Foundry's** built-in observability stack. The Foundry project `alpha-state-trading-MMA` has the App Insights resource `tradingiq-ai` (in `rg-dev`) attached via the portal's *Connected resources*. The Foundry "Tracing" tab reads spans out of that App Insights workspace; there's no separate Foundry-native OTLP endpoint.
 
-The custom `agent.run` span wraps the entire streaming call and is tagged with `agent.name`, `agent.version`, `run.id`, `response.id`, and (if blocked) `run.blocked_on_approval`. Exceptions are recorded on the span.
+[app/tracing.py](finbot/app/tracing.py) calls `AIProjectClient.telemetry.get_application_insights_connection_string()` at startup (auth via `DefaultAzureCredential`, no env-var needed), hands the string to `azure.monitor.opentelemetry.configure_azure_monitor()`, then runs `AIProjectInstrumentor().instrument()`. That single bootstrap installs the tracer provider, the App Insights exporter, FastAPI/httpx auto-instrumentation, and a GenAI auto-instrumentor that emits `gen_ai.*` spans for every `responses.create()` call made through the project's OpenAI client. Custom `agent.run` and `agent.tool` spans nest inside.
 
-To ship traces somewhere:
+Required env vars on `finbot-api`:
 ```sh
-az containerapp update -n finbot-api -g rg-dev \
-  --set-env-vars \
-    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector/v1/traces \
-    OTEL_SERVICE_NAME=finbot-api
+AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true  # captures prompts + outputs
 ```
 
-If `OTEL_EXPORTER_OTLP_ENDPOINT` is unset the tracer provider is still installed but spans are no-ops — there's no crash and no overhead beyond span creation.
+Required RBAC (already granted): the `finbot-api` managed identity has `Monitoring Metrics Publisher` on `tradingiq-ai`. Without it, `configure_azure_monitor` can't push spans.
+
+Viewing traces: **Azure AI Foundry portal → project → Tracing**. ~3–5 minute App Insights ingestion lag. If the project loses its App Insights connection, the bootstrap logs a warning and falls back to a no-op tracer — the app still boots.
 
 ## Known Caveats
 
@@ -210,6 +210,7 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v10.4` — E2E-driven polish. Fixes three regressions found via Playwright: (1) the "Agent produced no text response." fallback was being concatenated to real text because the post-loop check used `text_started` (which resets per message-end) instead of "did we ever emit text at all"; (2) when the agent emitted two message items in one run (mid-thought tool call), the deltas were merged into a single text segment producing visibly duplicated headings/bullets — fix is to open a new text segment on every `TEXT_MESSAGE_START` and join with `\n\n` on flatten; (3) no progress affordance between "all tools done" and "first text token" — new "Writing analysis" pill bridges that gap. Also tightens `get_price_history` and `get_stock_fundamentals` docstrings with a "SINGLE-TOOL RULE" so the agent stops over-calling tools the user didn't ask for (mcp:v9, api:v10, web:v10, agent v17)
 - `v10.5` — Trading IQ rebrand + visible "Thinking…" indicator. (1) Renames the app from "FinBot" to "Trading IQ" across the sidebar, landing screen, page title, and favicon, with a custom SVG logo (six outer nodes + spokes + central agent disc with "$"). (2) Adds a "Thinking…" label next to the bouncing dots in the pre-first-event window so the user has continuous textual feedback from the moment they hit send (web:v12)
 - `v10.6` — Comparison cards + UI polish. (1) `groupRenderSlots()` walks the render payloads on a persisted message (and the in-flight bubble's segments) and merges consecutive same-`kind` payloads into a `RenderGroup`; pairs render in a 2-col grid. (2) Stock-card pairs get a `StockCardDeltaRow` underneath: ΔP/E with a "X richer" hint, vs-52-week-low % for each ticker, and a market-cap tier compare. Chart pairs use the same grid without a delta row. Auto-detection means no MCP or agent change needed. (3) `RenderSource` footer no longer shows the `mcp_…` tool-call id and the `as_of` line is now date-only (no time/timezone clutter). (4) Sidebar/title tagline switched to "Institutional equity research @ your voice command". (5) Typing-indicator label switched to "Data analysis & Intelligence at work" while the LLM is processing (web:v17)
+- `v10.7` — Foundry-native observability. Drops the unused OTLP-HTTP exporter and wires tracing into Azure AI Foundry's built-in observability path. `tracing.py` now asks the project SDK for the attached App Insights connection string at runtime (`AIProjectClient.telemetry.get_application_insights_connection_string()`), hands it to `configure_azure_monitor`, and runs `AIProjectInstrumentor().instrument()` so every Foundry Responses-API call emits `gen_ai.*` spans visible in the Foundry portal's Tracing tab. New App Insights resource `tradingiq-ai` + Log Analytics workspace `tradingiq-logs` in `rg-dev`. `finbot-api` MI granted `Monitoring Metrics Publisher` on the AI resource. Two new env vars on the Container App: `AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true` and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` (api:v11)
 
 ## Keeping This File Current
 
