@@ -4,13 +4,20 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Thread,
   Message,
-  RenderPayload,
   addMessage,
   setThreadForeignId,
 } from "@/lib/threads";
+import {
+  type AGUIEvent,
+  type LiveAssistant,
+  appendOrCreateText,
+  chunkLiveSegments,
+  flattenLive,
+  isRenderPayload,
+} from "@/lib/agui-segments";
 import { ChatMessage, TypingIndicator } from "@/components/chat-message";
-import { StepPill, type StepState } from "@/components/step-pill";
-import { RenderGroup, type RenderGroupRun } from "@/components/render-group";
+import { StepPill } from "@/components/step-pill";
+import { RenderGroup } from "@/components/render-group";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Send, BarChart2 } from "lucide-react";
@@ -29,107 +36,6 @@ const SUGGESTIONS = [
 interface ChatAreaProps {
   thread: Thread | null;
   onMessagesUpdated: () => void;
-}
-
-interface AGUIEvent {
-  type: string;
-  threadId?: string;
-  runId?: string;
-  messageId?: string;
-  delta?: string;
-  message?: string;
-  name?: string;
-  value?: unknown;
-  stepName?: string;
-}
-
-function isRenderPayload(value: unknown): value is RenderPayload {
-  if (!value || typeof value !== "object") return false;
-  const v = value as { kind?: unknown };
-  return v.kind === "chart" || v.kind === "stock_card";
-}
-
-/** Ordered segments that make up the live (in-flight) assistant message.
- * Once the run finishes we flatten this back into `Message.content` +
- * `renderSlots` for persistence. Keeping the segment order in memory is
- * what enables interleaved rendering — a card can appear *before* the text
- * that references it. */
-type LiveSegment =
-  | { kind: "text"; text: string }
-  | { kind: "step"; step: StepState }
-  | { kind: "render"; payload: RenderPayload };
-
-interface LiveAssistant {
-  segments: LiveSegment[];
-}
-
-/** Append a delta to the most recent text segment, OR start a new one if
- * the previous segment was anything else (step pill, render, or a
- * different text block). The caller may also pass `forceNewSegment=true`
- * when it sees a `TEXT_MESSAGE_START` to force a paragraph break — the
- * agent emits a fresh message item every time it resumes after a tool
- * call, and those should not visually merge with the prior text. */
-function appendOrCreateText(
-  segments: LiveSegment[],
-  delta: string,
-  forceNewSegment = false
-): LiveSegment[] {
-  const last = segments[segments.length - 1];
-  if (!forceNewSegment && last && last.kind === "text") {
-    return [
-      ...segments.slice(0, -1),
-      { kind: "text", text: last.text + delta },
-    ];
-  }
-  return [...segments, { kind: "text", text: delta }];
-}
-
-/** Walk live.segments and merge consecutive `render` segments of the same
- * `kind` into one grouped chunk. Step pills and text segments stay as-is.
- * This is what enables side-by-side comparison cards in the in-flight
- * bubble, mirroring the grouping the persisted message gets in
- * chat-message.tsx. */
-type LiveDisplayChunk =
-  | { kind: "step"; step: StepState }
-  | { kind: "text"; text: string }
-  | { kind: "renderGroup"; group: RenderGroupRun };
-
-function chunkLiveSegments(segments: LiveSegment[]): LiveDisplayChunk[] {
-  const chunks: LiveDisplayChunk[] = [];
-  for (const seg of segments) {
-    if (seg.kind === "render") {
-      const last = chunks[chunks.length - 1];
-      if (
-        last &&
-        last.kind === "renderGroup" &&
-        last.group.kind === seg.payload.kind
-      ) {
-        last.group.items.push(seg.payload);
-      } else {
-        chunks.push({
-          kind: "renderGroup",
-          group: { kind: seg.payload.kind, items: [seg.payload] },
-        });
-      }
-    } else if (seg.kind === "step") {
-      chunks.push({ kind: "step", step: seg.step });
-    } else {
-      chunks.push({ kind: "text", text: seg.text });
-    }
-  }
-  return chunks;
-}
-
-function flattenLive(live: LiveAssistant): { text: string; renderSlots: RenderPayload[] } {
-  const textChunks: string[] = [];
-  const renderSlots: RenderPayload[] = [];
-  for (const seg of live.segments) {
-    if (seg.kind === "text") textChunks.push(seg.text);
-    else if (seg.kind === "render") renderSlots.push(seg.payload);
-  }
-  // Join distinct text segments with a blank line so markdown renders them
-  // as separate blocks instead of running headings/bullets together.
-  return { text: textChunks.join("\n\n"), renderSlots };
 }
 
 function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
