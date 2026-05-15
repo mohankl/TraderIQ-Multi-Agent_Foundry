@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Thread,
   Message,
+  RenderPayload,
   addMessage,
   setThreadForeignId,
 } from "@/lib/threads";
@@ -32,6 +33,15 @@ interface AGUIEvent {
   messageId?: string;
   delta?: string;
   message?: string;
+  /** AG-UI CUSTOM event fields */
+  name?: string;
+  value?: unknown;
+}
+
+function isRenderPayload(value: unknown): value is RenderPayload {
+  if (!value || typeof value !== "object") return false;
+  const v = value as { kind?: unknown };
+  return v.kind === "chart";
 }
 
 export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
@@ -94,6 +104,7 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
         let buffer = "";
         let assistantContent = "";
         let foundryThreadId: string | undefined;
+        const renderSlots: RenderPayload[] = [];
 
         while (true) {
           const { done, value } = await reader.read();
@@ -113,6 +124,12 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
                 foundryThreadId = event.threadId;
               } else if (event.type === "RUN_ERROR") {
                 throw new Error(event.message ?? "Run error");
+              } else if (event.type === "CUSTOM" && event.name === "ui.render") {
+                if (isRenderPayload(event.value)) {
+                  renderSlots.push(event.value);
+                } else {
+                  console.warn("Ignoring ui.render with unknown payload", event.value);
+                }
               }
             } catch (parseErr) {
               console.warn("SSE parse failed", parseErr, line);
@@ -120,10 +137,11 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
           }
         }
 
-        if (assistantContent && thread) {
+        if ((assistantContent || renderSlots.length) && thread) {
           const saved = addMessage(thread.id, {
             role: "assistant",
             content: assistantContent,
+            renderSlots: renderSlots.length ? renderSlots : undefined,
           });
           setLocalMessages((prev) => [...prev, saved]);
           if (foundryThreadId) setThreadForeignId(thread.id, foundryThreadId);

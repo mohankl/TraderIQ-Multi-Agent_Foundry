@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `8`)
+- **Agent name:** `alphastate-trading-mma-agent` (version `10` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -29,9 +29,9 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v2` | 8080 | MCP server, 4 tools |
-| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v3` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE) |
-| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v2` | 3000 | Next.js 16 frontend; `/api/chat` proxies to finbot-api `/agui` |
+| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v3` | 8080 | MCP server, 5 tools (`get_price_history` added in v3) |
+| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v4` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). Extracts `get_price_history` tool outputs and emits AG-UI `CUSTOM` events |
+| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v3` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders inline charts via Recharts |
 
 All three apps use system-assigned managed identity for ACR pull.
 
@@ -71,6 +71,7 @@ Trading-Multi-Agent/
 ## MCP Tools
 
 - `get_stock_fundamentals(ticker)` — yfinance
+- `get_price_history(ticker, period)` — yfinance OHLC time series; result is rendered as an inline chart on the frontend (see "Generative UI / Inline Components" below)
 - `get_yahoo_finance_news(ticker)` — yfinance news
 - `search_news(query)` — SerpAPI Google News
 - `wikipedia_lookup(query)` — Wikipedia
@@ -89,11 +90,36 @@ Trading-Multi-Agent/
 4. FastAPI streams AG-UI events: `RUN_STARTED` → `TEXT_MESSAGE_START` → `TEXT_MESSAGE_CONTENT` → `TEXT_MESSAGE_END` → `RUN_FINISHED`
 5. Browser parses events, accumulates `delta`, persists assistant message and `RUN_FINISHED.threadId` as `Thread.foreignId` for the next turn
 
+## Generative UI / Inline Components
+
+The frontend renders agent-driven UI (currently: stock charts) using AG-UI `CUSTOM` events. Flow:
+
+1. Agent calls an MCP tool that returns structured data (today: `get_price_history`).
+2. FastAPI's [agent.py](finbot/app/agent.py) inspects `response.output` after the Foundry call. `_extract_chart_payloads()` finds `mcp_call` items where `name == "get_price_history"` and parses their JSON `output` into a typed render payload `{kind, chartType, ticker, period, points, stats}`.
+3. FastAPI emits one AG-UI `CUSTOM` event per payload with `name="ui.render"` and `value=<payload>`, placed between `TEXT_MESSAGE_END` and `RUN_FINISHED`.
+4. The frontend SSE parser in [chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) collects these CUSTOM events into a `renderSlots` array on the persisted assistant message.
+5. [chat-message.tsx](finbot/frontend/src/components/chat-message.tsx) renders the markdown text then iterates `renderSlots` through [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](finbot/frontend/src/components/chart-card.tsx), Recharts).
+
+### Adding a new inline component
+
+1. Add an MCP tool in [mcp-server/server.py](mcp-server/server.py) that returns structured JSON.
+2. Add a new variant to the `RenderPayload` union in [threads.ts](finbot/frontend/src/lib/threads.ts) (e.g. `HeatmapRenderPayload`).
+3. Teach `_extract_chart_payloads` (or a sibling) to recognize that tool's `mcp_call` name and convert its output. Rename the helper if a chart-specific name becomes misleading.
+4. Add a case to [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx) and ship the component.
+5. Bump the Foundry agent version after attaching the new tool, and pin the env var on `finbot-api`.
+
+### Why AG-UI `CUSTOM`, not text-embedded JSON or `TOOL_CALL_RESULT`
+
+- `CUSTOM` is the AG-UI-blessed channel for arbitrary typed payloads ([docs](https://docs.ag-ui.com/concepts/events)).
+- Markdown-fenced sentinels are fragile against LLM hallucination.
+- `TOOL_CALL_RESULT` events are meant to flow into the next agent thought, not the UI.
+
 ## Known Caveats
 
 - **`useCopilotChat` is abandoned.** The free hook has a destructuring bug — it returns `visibleMessages` but the internal hook only populates `messages`. We bypass CopilotKit entirely; the `/api/copilotkit/*` routes and `proxy.ts` are dead code kept for reference.
 - **Use `TEXT_MESSAGE_CONTENT`, never `TEXT_MESSAGE_CHUNK`, when also sending explicit `TEXT_MESSAGE_START`/`END`.** The AG-UI chunk transformer synthesizes a second `TEXT_MESSAGE_START` for the same message ID, which the event validator rejects as "already in progress".
 - **CopilotKit thread IDs are plain UUIDs.** Don't pass them to Foundry as `previous_response_id` — Foundry rejects anything that doesn't start with `resp_`.
+- **New MCP tools require explicit Foundry approval AND a new agent version.** Adding a tool to `mcp-server/server.py` and rolling `finbot-mcp` is not enough. In the Foundry portal you must (1) approve the new tool (or set it to "auto-approve"), and (2) **save as a new agent version**. Then update `AZURE_EXISTING_AGENT_VERSION` on `finbot-api` to point at the new version. Without the new version, the agent emits `mcp_approval_request` items instead of calling the tool, and `response.output_text` is empty.
 
 ## Common Commands
 
@@ -130,6 +156,8 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v1.0` — Foundry agent + FastAPI thin client + MCP server deployed
 - `v2.0` — Streaming chat UI with Foundry continuity (local)
 - `v8.0` — Azure deployment of the Next.js frontend
+- `v8.1` — Project Claude Code settings, slash commands, agents, prod-guard hook
+- `v9.0` — Inline charts (generative UI): `get_price_history` MCP tool, AG-UI `CUSTOM` events, Recharts ChartCard, render-slot registry
 
 ## Keeping This File Current
 

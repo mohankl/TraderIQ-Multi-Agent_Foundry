@@ -1,10 +1,39 @@
 import { v4 as uuidv4 } from "uuid";
 
+export interface ChartPoint {
+  t: string; // ISO date YYYY-MM-DD
+  c: number; // close
+}
+
+export interface ChartStats {
+  start: number;
+  end: number;
+  high: number;
+  low: number;
+  pct_change: number;
+}
+
+export interface ChartRenderPayload {
+  kind: "chart";
+  chartType: "line";
+  ticker: string;
+  period: string;
+  points: ChartPoint[];
+  stats: ChartStats;
+}
+
+/** Discriminated union for agent-driven inline UI. Add new `kind`s as the
+ * agent gains new tools that produce structured outputs. */
+export type RenderPayload = ChartRenderPayload;
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  /** Inline UI components emitted by the agent (e.g. charts). Rendered after
+   * the text in the same message bubble. */
+  renderSlots?: RenderPayload[];
 }
 
 export interface Thread {
@@ -60,6 +89,10 @@ export function addMessage(threadId: string, message: Omit<Message, "id" | "crea
   if (idx === -1) throw new Error(`Thread ${threadId} not found`);
 
   const newMsg: Message = { ...message, id: uuidv4(), createdAt: Date.now() };
+  // Drop empty renderSlots so localStorage stays clean.
+  if (newMsg.renderSlots && newMsg.renderSlots.length === 0) {
+    delete newMsg.renderSlots;
+  }
   threads[idx].messages.push(newMsg);
 
   // Auto-title from first user message

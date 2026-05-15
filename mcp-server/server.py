@@ -51,6 +51,65 @@ def get_stock_fundamentals(ticker: str) -> dict:
 
 
 @mcp.tool()
+def get_price_history(ticker: str, period: str = "1y") -> dict:
+    """Fetch a price-history time series for a stock so the UI can render a chart.
+
+    Use this whenever the user asks for a chart, graph, trend, or historical
+    performance (e.g. "show me Apple's 52-week chart", "TSLA last 6 months",
+    "how has NVDA performed this year"). The result is structured and the
+    frontend renders it as an inline chart card.
+
+    Args:
+        ticker: Symbol like AAPL, MSFT, TSLA.
+        period: Period string accepted by yfinance. One of
+            "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max".
+            Defaults to "1y" (which covers 52 weeks).
+
+    Returns:
+        A dict with `ticker`, `period`, `points` (list of {t, c} where t is
+        ISO date and c is the close), and `stats` (start, end, high, low,
+        pct_change). The agent should reference the stats in its written
+        summary; the points array drives the chart on the frontend.
+    """
+    allowed = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
+    if period not in allowed:
+        period = "1y"
+
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period=period, auto_adjust=False)
+    if hist is None or hist.empty:
+        return {
+            "ticker": ticker.upper(),
+            "period": period,
+            "points": [],
+            "stats": {},
+            "error": f"No price history available for {ticker.upper()}.",
+        }
+
+    closes = hist["Close"].dropna()
+    points = [
+        {"t": ts.strftime("%Y-%m-%d"), "c": round(float(c), 4)}
+        for ts, c in closes.items()
+    ]
+    start = float(closes.iloc[0])
+    end = float(closes.iloc[-1])
+    pct = ((end - start) / start) * 100.0 if start else 0.0
+
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "points": points,
+        "stats": {
+            "start": round(start, 4),
+            "end": round(end, 4),
+            "high": round(float(closes.max()), 4),
+            "low": round(float(closes.min()), 4),
+            "pct_change": round(pct, 2),
+        },
+    }
+
+
+@mcp.tool()
 def get_yahoo_finance_news(ticker: str) -> str:
     """Fetch recent news headlines for a stock ticker from Yahoo Finance.
 

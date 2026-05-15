@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Message } from "@/lib/threads";
 import { cn } from "@/lib/utils";
 import { TrendingUp, User } from "lucide-react";
+import { RenderSlot } from "@/components/render-slot";
 
 interface ChatMessageProps {
   message: Message;
@@ -39,9 +40,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {isUser ? (
           <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
         ) : (
-          <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-          </div>
+          <>
+            {message.content && (
+              <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              </div>
+            )}
+            {message.renderSlots?.map((slot, i) => (
+              <RenderSlot key={i} payload={slot} />
+            ))}
+          </>
         )}
       </div>
     </div>
