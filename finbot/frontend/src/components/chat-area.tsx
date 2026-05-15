@@ -62,9 +62,19 @@ interface LiveAssistant {
   segments: LiveSegment[];
 }
 
-function appendOrCreateText(segments: LiveSegment[], delta: string): LiveSegment[] {
+/** Append a delta to the most recent text segment, OR start a new one if
+ * the previous segment was anything else (step pill, render, or a
+ * different text block). The caller may also pass `forceNewSegment=true`
+ * when it sees a `TEXT_MESSAGE_START` to force a paragraph break — the
+ * agent emits a fresh message item every time it resumes after a tool
+ * call, and those should not visually merge with the prior text. */
+function appendOrCreateText(
+  segments: LiveSegment[],
+  delta: string,
+  forceNewSegment = false
+): LiveSegment[] {
   const last = segments[segments.length - 1];
-  if (last && last.kind === "text") {
+  if (!forceNewSegment && last && last.kind === "text") {
     return [
       ...segments.slice(0, -1),
       { kind: "text", text: last.text + delta },
@@ -74,13 +84,15 @@ function appendOrCreateText(segments: LiveSegment[], delta: string): LiveSegment
 }
 
 function flattenLive(live: LiveAssistant): { text: string; renderSlots: RenderPayload[] } {
-  let text = "";
+  const textChunks: string[] = [];
   const renderSlots: RenderPayload[] = [];
   for (const seg of live.segments) {
-    if (seg.kind === "text") text += seg.text;
+    if (seg.kind === "text") textChunks.push(seg.text);
     else if (seg.kind === "render") renderSlots.push(seg.payload);
   }
-  return { text, renderSlots };
+  // Join distinct text segments with a blank line so markdown renders them
+  // as separate blocks instead of running headings/bullets together.
+  return { text: textChunks.join("\n\n"), renderSlots };
 }
 
 function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
@@ -89,24 +101,25 @@ function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
   // and looks like a dead UI element.
   if (live.segments.length === 0) return null;
 
-  // If the only segments so far are step pills, skip the bubble chrome and
-  // let the pills sit naked next to the avatar (avoids the "tiny empty
-  // bubble with a pill that blends into the card background" effect).
-  const onlySteps = live.segments.every((s) => s.kind === "step");
+  // We want consistent visibility for every segment type: step pills, cards,
+  // and text. Wrap each kind in its own block at full width with sane gap
+  // and DO NOT apply the `bg-card` chrome to the outer container — cards
+  // already have their own borders and step pills need real contrast.
+  const hasText = live.segments.some((s) => s.kind === "text");
+  // After all tools finish but BEFORE the first token of narrative arrives,
+  // show a "writing analysis…" status so the user has a continuous signal.
+  const allStepsDone = live.segments
+    .filter((s) => s.kind === "step")
+    .every((s) => s.kind === "step" && s.step.status === "done");
+  const hasAnyStep = live.segments.some((s) => s.kind === "step");
+  const showWritingHint = hasAnyStep && allStepsDone && !hasText;
 
   return (
     <div className="flex items-start gap-3 py-4">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
         <TrendingUp className="h-4 w-4" />
       </div>
-      <div
-        className={cn(
-          "max-w-[80%] text-sm text-foreground",
-          onlySteps
-            ? "flex flex-wrap items-center gap-2"
-            : "rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 shadow-sm"
-        )}
-      >
+      <div className="flex max-w-[80%] flex-col gap-2 text-sm text-foreground">
         {live.segments.map((seg, i) => {
           if (seg.kind === "step") {
             return <StepPill key={i} step={seg.step} />;
@@ -117,13 +130,27 @@ function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
           return (
             <div
               key={i}
-              className="prose prose-sm dark:prose-invert max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              className="prose prose-sm dark:prose-invert max-w-none rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 leading-relaxed shadow-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             >
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{seg.text}</ReactMarkdown>
             </div>
           );
         })}
+        {showWritingHint && <WritingHint />}
       </div>
+    </div>
+  );
+}
+
+function WritingHint() {
+  return (
+    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
+      <span className="flex gap-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce [animation-delay:300ms]" />
+      </span>
+      <span>Writing analysis</span>
     </div>
   );
 }
@@ -173,6 +200,13 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
       // tools, so name-based lookup is fine.
       const openStepIndexByName = new Map<string, number>();
 
+      // When TEXT_MESSAGE_START arrives, the next TEXT_MESSAGE_CONTENT delta
+      // should start a *new* text segment instead of appending to the prior
+      // one. The agent emits a fresh message item every time it resumes
+      // after a tool call, and merging two such items into one paragraph
+      // produces visible duplication (same headings appearing twice).
+      let newTextSegmentPending = false;
+
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
@@ -205,11 +239,15 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
             if (!line) continue;
             try {
               const event: AGUIEvent = JSON.parse(line.slice(6));
-              if (event.type === "TEXT_MESSAGE_CONTENT" && event.delta) {
+              if (event.type === "TEXT_MESSAGE_START") {
+                newTextSegmentPending = true;
+              } else if (event.type === "TEXT_MESSAGE_CONTENT" && event.delta) {
                 const delta = event.delta;
+                const force = newTextSegmentPending;
+                newTextSegmentPending = false;
                 setLive((prev) =>
                   prev
-                    ? { segments: appendOrCreateText(prev.segments, delta) }
+                    ? { segments: appendOrCreateText(prev.segments, delta, force) }
                     : prev
                 );
               } else if (event.type === "STEP_STARTED" && event.stepName) {

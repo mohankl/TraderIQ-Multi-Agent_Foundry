@@ -75,6 +75,14 @@ def get_stock_fundamentals(ticker: str) -> dict:
     — this returns only scalar snapshot values, not a time series. For those
     queries, call get_price_history instead.
 
+    SINGLE-TOOL RULE for fundamentals queries:
+      When the user asks for "fundamentals", a "snapshot", or a "stock card",
+      call ONLY get_stock_fundamentals. Do NOT also call get_price_history
+      or get_yahoo_finance_news unless the user explicitly asked for a chart
+      or news. Extra calls slow the response and clutter the bubble with
+      unrequested cards. One fundamentals query → one tool call → one short
+      interpretation.
+
     DIVISION OF LABOR — read carefully:
       The frontend renders an inline stock-card UI directly from this tool's
       structured output. The card already shows: ticker, exchange, sector,
@@ -161,6 +169,15 @@ def get_price_history(ticker: str, period: str = "1y") -> dict:
     frontend cannot render a chart from a snapshot.
 
     DO NOT say "I cannot show charts" or refer the user to external sites.
+
+    SINGLE-TOOL RULE for chart queries:
+      When the user asks for a chart, graph, plot, or visual, call ONLY
+      get_price_history. Do NOT also call get_stock_fundamentals or
+      get_yahoo_finance_news unless the user explicitly asked for those.
+      Extra tool calls slow the response, render extra cards the user didn't
+      ask for, and tempt you to write the analyst brief twice (once pre-news
+      and once post-news), which produces duplicated text. One chart query
+      → one tool call → one short interpretation.
 
     DIVISION OF LABOR — read carefully:
       The frontend renders an inline chart card directly from this tool's

@@ -120,7 +120,8 @@ async def run_agent_stream(
         open_steps: dict[int, str] = {}
         pending_approvals: list[str] = []
         answer_msg_id: str | None = None
-        text_started = False
+        text_started = False  # is a TEXT_MESSAGE_START currently open
+        any_text_emitted = False  # did we ever stream any text at all
         final_response_id = ""
         had_error: Exception | None = None
 
@@ -204,6 +205,7 @@ async def run_agent_stream(
                             )
                         )
                         text_started = True
+                        any_text_emitted = True
                     yield encoder.encode(
                         TextMessageContentEvent(
                             type=EventType.TEXT_MESSAGE_CONTENT,
@@ -228,10 +230,21 @@ async def run_agent_stream(
             )
         open_steps.clear()
 
-        # If we never sent any text but the run is wedged on approvals, tell
-        # the user clearly and DROP the response id so the next message
+        # Close a still-open text stream defensively (rare — Foundry normally
+        # closes the message item before response.completed).
+        if text_started and answer_msg_id:
+            yield encoder.encode(
+                TextMessageEndEvent(
+                    type=EventType.TEXT_MESSAGE_END,
+                    message_id=answer_msg_id,
+                )
+            )
+            text_started = False
+
+        # If we never streamed any text and the run is wedged on approvals,
+        # tell the user clearly and DROP the response id so the next message
         # doesn't inherit the pending-approval thread.
-        if not text_started:
+        if not any_text_emitted:
             if pending_approvals:
                 tools = ", ".join(f"`{t}`" for t in pending_approvals)
                 fallback = (

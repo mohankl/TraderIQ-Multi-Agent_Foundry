@@ -24,3 +24,6 @@ wheels/
 
 # Claude Code runtime state (scheduled wakeup lockfile)
 .claude/scheduled_tasks.lock
+
+# Playwright E2E screenshots (regenerated on each run)
+e2e-*.png

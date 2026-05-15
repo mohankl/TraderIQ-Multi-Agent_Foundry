@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `16` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
+- **Agent name:** `alphastate-trading-mma-agent` (version `17` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -29,9 +29,9 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v8` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions to keep the run alive |
-| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v9` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. OpenTelemetry traces on `agent.run` |
-| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v8` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively as the run unfolds |
+| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v9` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. Docstrings carry a "SINGLE-TOOL RULE" so the agent doesn't over-call (e.g. fundamentals during a chart query). `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions |
+| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v10` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. Tracks `any_text_emitted` so the "no text response" fallback only fires when text was truly absent. OpenTelemetry traces on `agent.run` |
+| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v10` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively. Each `TEXT_MESSAGE_START` opens a new text segment so successive message items render as distinct markdown blocks. Shows a "Writing analysis" hint between tool-done and first token |
 
 All three apps use system-assigned managed identity for ACR pull.
 
@@ -207,6 +207,7 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v10.1` — Lossy-round-trip fix. Tool docstrings codify division of labor (card owns numbers, narrative owns interpretation). Tool data carries `as_of`; render payloads carry `source_tool_call_id`. Cards show a tiny provenance footer. Approval-pending state now surfaces as a clear error and doesn't poison the conversation (mcp:v7, api:v8, web:v6, agent v16)
 - `v10.2` — Streaming + progressive disclosure. FastAPI now consumes Foundry's streaming Responses events and maps them onto AG-UI `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and a `CUSTOM ui.render` event the moment each tool finishes. Frontend renders a live segmented bubble (step pills inline, cards appearing as tools complete, text streaming token-by-token). OpenTelemetry traces on `agent.run` with FastAPI + httpx auto-instrumentation. Also hardens `wikipedia_lookup` (proper User-Agent + broad exception handling so MediaWiki rate-limits no longer abort the run) (mcp:v8, api:v9, web:v7, agent v16)
 - `v10.3` — Live-bubble visibility fix. The in-flight assistant bubble used to render an empty dark pill next to the avatar while waiting for the first STEP_STARTED to arrive; now it returns null until it has at least one segment, and when the only segments are step pills it drops the `bg-card` chrome so the spinner has real contrast (web:v8)
+- `v10.4` — E2E-driven polish. Fixes three regressions found via Playwright: (1) the "Agent produced no text response." fallback was being concatenated to real text because the post-loop check used `text_started` (which resets per message-end) instead of "did we ever emit text at all"; (2) when the agent emitted two message items in one run (mid-thought tool call), the deltas were merged into a single text segment producing visibly duplicated headings/bullets — fix is to open a new text segment on every `TEXT_MESSAGE_START` and join with `\n\n` on flatten; (3) no progress affordance between "all tools done" and "first text token" — new "Writing analysis" pill bridges that gap. Also tightens `get_price_history` and `get_stock_fundamentals` docstrings with a "SINGLE-TOOL RULE" so the agent stops over-calling tools the user didn't ask for (mcp:v9, api:v10, web:v10, agent v17)
 
 ## Keeping This File Current
 
