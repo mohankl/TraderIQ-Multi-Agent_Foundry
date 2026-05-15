@@ -21,7 +21,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 - **Foundry resource:** `alpha-state-trading-multi-agent`
 - **Project:** `alpha-state-trading-MMA`
 - **Endpoint:** `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA`
-- **Agent name:** `alphastate-trading-mma-agent` (version `10` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
+- **Agent name:** `alphastate-trading-mma-agent` (version `11` — pinned via `AZURE_EXISTING_AGENT_VERSION` env on `finbot-api`)
 - **Agent type:** New Foundry v2 agent — invoked via OpenAI Responses API, NOT legacy Assistants API
 - **Toolbox:** `trading-tools` exists but agent attaches MCP directly (Browse All Tools → MCP)
 
@@ -29,7 +29,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v3` | 8080 | MCP server, 5 tools (`get_price_history` added in v3) |
+| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v4` | 8080 | MCP server, 5 tools (`get_price_history` added in v3; v4 sharpens docstrings to stop the agent from substituting fundamentals for chart queries) |
 | `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v4` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). Extracts `get_price_history` tool outputs and emits AG-UI `CUSTOM` events |
 | `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v3` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders inline charts via Recharts |
 
@@ -158,6 +158,7 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v8.0` — Azure deployment of the Next.js frontend
 - `v8.1` — Project Claude Code settings, slash commands, agents, prod-guard hook
 - `v9.0` — Inline charts (generative UI): `get_price_history` MCP tool, AG-UI `CUSTOM` events, Recharts ChartCard, render-slot registry
+- `v9.1` — Sharpened MCP tool docstrings so the agent reliably picks `get_price_history` for chart queries instead of substituting `get_stock_fundamentals` (mcp:v4, agent v11)
 
 ## Keeping This File Current
 

@@ -30,12 +30,16 @@ mcp = FastMCP(
 
 @mcp.tool()
 def get_stock_fundamentals(ticker: str) -> dict:
-    """Fetch current fundamentals for a publicly traded stock.
+    """Fetch a current SNAPSHOT of fundamentals for a publicly traded stock.
 
-    Use this to get price, P/E ratio, market cap, revenue growth, and 52-week
-    range for any ticker symbol (e.g. AAPL, MSFT, TSLA). Returns structured
-    numeric data sourced from Yahoo Finance. Prefer this over web search when
-    the user asks about price, valuation multiples, or financial metrics.
+    Use this for: current price, P/E ratio, market cap, revenue growth, and the
+    52-week high/low *numbers* (two values). Sourced from Yahoo Finance.
+
+    DO NOT use this when the user asks for a chart, graph, plot, trend, or
+    historical performance — this returns ONLY two scalar values for the
+    52-week range (high and low), not a time series. The frontend cannot render
+    a chart from this tool's output. For chart/graph/trend/historical queries,
+    call get_price_history instead.
     """
     stock = yf.Ticker(ticker)
     info = stock.info or {}
@@ -52,24 +56,34 @@ def get_stock_fundamentals(ticker: str) -> dict:
 
 @mcp.tool()
 def get_price_history(ticker: str, period: str = "1y") -> dict:
-    """Fetch a price-history time series for a stock so the UI can render a chart.
+    """Fetch a daily price-history TIME SERIES for a stock; the UI renders it as a chart.
 
-    Use this whenever the user asks for a chart, graph, trend, or historical
-    performance (e.g. "show me Apple's 52-week chart", "TSLA last 6 months",
-    "how has NVDA performed this year"). The result is structured and the
-    frontend renders it as an inline chart card.
+    YOU MUST CALL THIS TOOL whenever the user asks for any of:
+      - a "chart", "graph", "plot", "visual" of a stock
+      - "show me" a stock's prices
+      - a "52-week chart" or "annual chart" (use period="1y")
+      - historical performance, trend, or movement over time
+      - "how did X perform this month/quarter/year"
+      - "compare X and Y" over a period (call twice, once per ticker)
+
+    DO NOT substitute get_stock_fundamentals for these queries. Fundamentals
+    only returns the high and low NUMBERS, not the day-by-day series, and the
+    frontend cannot render a chart from a snapshot.
+
+    DO NOT say "I cannot show charts" or refer the user to external sites.
+    The frontend renders an inline chart card automatically from this tool's
+    output — your job is to call this tool, then write a 2-3 sentence
+    narrative referencing the stats (start, end, high, low, pct_change).
 
     Args:
         ticker: Symbol like AAPL, MSFT, TSLA.
-        period: Period string accepted by yfinance. One of
-            "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max".
-            Defaults to "1y" (which covers 52 weeks).
+        period: One of "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max".
+            Default "1y" (covers 52 weeks). For "52-week" or "annual" use "1y".
 
     Returns:
-        A dict with `ticker`, `period`, `points` (list of {t, c} where t is
-        ISO date and c is the close), and `stats` (start, end, high, low,
-        pct_change). The agent should reference the stats in its written
-        summary; the points array drives the chart on the frontend.
+        {ticker, period, points: [{t: ISO date, c: close}], stats: {start, end,
+        high, low, pct_change}}. The points drive the chart; the stats are for
+        your written narrative.
     """
     allowed = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"}
     if period not in allowed:
