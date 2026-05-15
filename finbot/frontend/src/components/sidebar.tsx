@@ -4,8 +4,9 @@ import { Thread } from "@/lib/threads";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { MessageSquarePlus, TrendingUp, MessageSquare, Trash2 } from "lucide-react";
+import { MessageSquarePlus, MessageSquare, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/brand-logo";
 
 interface SidebarProps {
   threads: Thread[];
@@ -20,11 +21,9 @@ export function Sidebar({ threads, activeThreadId, onNewChat, onSelectThread, on
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-card">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <TrendingUp className="h-4 w-4" />
-        </div>
+        <BrandLogo size="md" className="text-primary" />
         <div>
-          <h1 className="text-sm font-semibold tracking-tight">FinBot</h1>
+          <h1 className="text-sm font-semibold tracking-tight">Trading IQ</h1>
           <p className="text-xs text-muted-foreground">Equity Research Agent</p>
         </div>
       </div>

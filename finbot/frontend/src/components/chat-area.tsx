@@ -11,6 +11,7 @@ import {
 import { ChatMessage, TypingIndicator } from "@/components/chat-message";
 import { StepPill, type StepState } from "@/components/step-pill";
 import { RenderSlot } from "@/components/render-slot";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Send, BarChart2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -343,11 +344,9 @@ export function ChatArea({ thread, onMessagesUpdated }: ChatAreaProps) {
   if (!thread) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center px-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-          <TrendingUp className="h-8 w-8 text-primary" />
-        </div>
+        <BrandLogo size="lg" className="text-primary" />
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">FinBot</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Trading IQ</h2>
           <p className="mt-1.5 text-sm text-muted-foreground max-w-xs leading-relaxed">
             Your AI-powered equity research analyst. Create a new chat to get
             started.

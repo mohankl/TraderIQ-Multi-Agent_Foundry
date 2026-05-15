@@ -11,8 +11,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "FinBot — Equity Research Agent",
+  title: "Trading IQ — Equity Research Agent",
   description: "AI-powered equity research analyst. Get structured stock briefs instantly.",
+  icons: { icon: "/trading-iq-logo.svg" },
 };
 
 export default function RootLayout({
