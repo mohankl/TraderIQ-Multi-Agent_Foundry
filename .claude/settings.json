@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(uv run uvicorn:*)",
+      "Bash(uv sync:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm ci:*)",
+      "Bash(az account show:*)",
+      "Bash(az containerapp show:*)",
+      "Bash(az containerapp list:*)",
+      "Bash(az containerapp logs show:*)",
+      "Bash(az containerapp env list:*)",
+      "Bash(az acr repository show-tags:*)",
+      "Bash(az acr build:*)",
+      "Bash(az role assignment list:*)",
+      "Bash(curl -sS -o /dev/null -w:*)",
+      "Bash(curl -sS https://finbot-api*)",
+      "Bash(curl -sS https://finbot-web*)"
+    ],
+    "ask": [
+      "Bash(az containerapp update:*)",
+      "Bash(az containerapp create:*)",
+      "Bash(az containerapp delete:*)",
+      "Bash(az role assignment create:*)",
+      "Bash(az role assignment delete:*)",
+      "Bash(az acr repository delete:*)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git checkout --:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "deny": [
+      "Bash(az group delete:*)",
+      "Bash(az containerapp env delete:*)",
+      "Bash(az acr delete:*)",
+      "Bash(az identity delete:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/azure-prod-guard.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "AZURE_RESOURCE_GROUP": "rg-dev",
+    "AZURE_CONTAINER_REGISTRY": "alphastatetradingacr",
+    "AZURE_CONTAINER_APPS_ENV": "trading-env",
+    "FINBOT_API_FQDN": "finbot-api.proudisland-e27da000.westus.azurecontainerapps.io",
+    "FINBOT_WEB_FQDN": "finbot-web.proudisland-e27da000.westus.azurecontainerapps.io"
+  }
+}
