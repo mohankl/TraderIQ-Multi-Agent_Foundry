@@ -31,7 +31,7 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 |---|---|---|---|
 | `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v8` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions to keep the run alive |
 | `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v9` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. OpenTelemetry traces on `agent.run` |
-| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v7` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively as the run unfolds |
+| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v8` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively as the run unfolds |
 
 All three apps use system-assigned managed identity for ACR pull.
 
@@ -206,6 +206,7 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v10.0` — Self-describing tool envelope `{data, render}`. FastAPI extractor is now generic — no per-tool code. Adding a new inline UI component no longer requires a backend change (mcp:v6, api:v6, agent v14)
 - `v10.1` — Lossy-round-trip fix. Tool docstrings codify division of labor (card owns numbers, narrative owns interpretation). Tool data carries `as_of`; render payloads carry `source_tool_call_id`. Cards show a tiny provenance footer. Approval-pending state now surfaces as a clear error and doesn't poison the conversation (mcp:v7, api:v8, web:v6, agent v16)
 - `v10.2` — Streaming + progressive disclosure. FastAPI now consumes Foundry's streaming Responses events and maps them onto AG-UI `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and a `CUSTOM ui.render` event the moment each tool finishes. Frontend renders a live segmented bubble (step pills inline, cards appearing as tools complete, text streaming token-by-token). OpenTelemetry traces on `agent.run` with FastAPI + httpx auto-instrumentation. Also hardens `wikipedia_lookup` (proper User-Agent + broad exception handling so MediaWiki rate-limits no longer abort the run) (mcp:v8, api:v9, web:v7, agent v16)
+- `v10.3` — Live-bubble visibility fix. The in-flight assistant bubble used to render an empty dark pill next to the avatar while waiting for the first STEP_STARTED to arrive; now it returns null until it has at least one segment, and when the only segments are step pills it drops the `bg-card` chrome so the spinner has real contrast (web:v8)
 
 ## Keeping This File Current
 

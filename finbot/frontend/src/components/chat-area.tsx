@@ -84,12 +84,29 @@ function flattenLive(live: LiveAssistant): { text: string; renderSlots: RenderPa
 }
 
 function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
+  // Don't render an empty bubble — TypingIndicator covers the pre-segment
+  // window. An empty card-colored pill on a dark background is invisible
+  // and looks like a dead UI element.
+  if (live.segments.length === 0) return null;
+
+  // If the only segments so far are step pills, skip the bubble chrome and
+  // let the pills sit naked next to the avatar (avoids the "tiny empty
+  // bubble with a pill that blends into the card background" effect).
+  const onlySteps = live.segments.every((s) => s.kind === "step");
+
   return (
     <div className="flex items-start gap-3 py-4">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
         <TrendingUp className="h-4 w-4" />
       </div>
-      <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 text-sm text-foreground shadow-sm">
+      <div
+        className={cn(
+          "max-w-[80%] text-sm text-foreground",
+          onlySteps
+            ? "flex flex-wrap items-center gap-2"
+            : "rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3 shadow-sm"
+        )}
+      >
         {live.segments.map((seg, i) => {
           if (seg.kind === "step") {
             return <StepPill key={i} step={seg.step} />;
@@ -97,7 +114,6 @@ function LiveAssistantBubble({ live }: { live: LiveAssistant }) {
           if (seg.kind === "render") {
             return <RenderSlot key={i} payload={seg.payload} />;
           }
-          // text
           return (
             <div
               key={i}
