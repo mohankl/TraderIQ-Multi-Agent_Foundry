@@ -63,7 +63,7 @@ flowchart LR
     end
 
     subgraph foundryplane["Microsoft AI Foundry"]
-        FoundryAgent["alphastate-trading-mma-agent<br/>v19 • Responses API agent<br/>tool-call orchestration"]
+        FoundryAgent["alphastate-trading-mma-agent<br/>v20 • Responses API agent<br/>tool-call orchestration"]
         FoundryModel["gpt-4.1-mini deployment"]
     end
 
@@ -74,7 +74,7 @@ flowchart LR
 
     User -->|HTTPS| Web
     Web -->|POST /api/chat → /agui SSE| API
-    API -->|Responses API stream=True<br/>agent_reference={name, v19}| FoundryAgent
+    API -->|Responses API stream=True<br/>agent_reference name+v20| FoundryAgent
     FoundryAgent -->|tool dispatch| FoundryModel
     FoundryAgent -->|MCP call + X-API-Key| MCP
     MCP -->|yfinance / SerpAPI / Wikipedia| External[(External APIs)]
@@ -120,12 +120,12 @@ sequenceDiagram
     participant U as User
     participant W as Next.js (tradingiq-web)
     participant A as FastAPI (tradingiq-api)
-    participant F as Foundry agent v19
+    participant F as Foundry agent v20
     participant M as MCP (tradingiq-mcp)
 
     U->>W: "AAPL fundamentals" (POST /api/chat)
     W->>A: POST /agui (AG-UI input envelope)
-    A->>F: responses.create(stream=True, agent_reference=v19, previous_response_id?)
+    A->>F: responses.create(stream=True, agent_reference=v20, previous_response_id?)
     F-->>A: response.created (response.id)
     A-->>W: RUN_STARTED (SSE)
     F->>M: mcp_call get_stock_fundamentals("AAPL") with X-API-Key
@@ -169,7 +169,7 @@ in a project called `alpha-state-trading-MMA` under the Foundry resource
 | **Foundry resource** | `alpha-state-trading-multi-agent` | Cognitive Services account holding the project |
 | **Project** | `alpha-state-trading-MMA` | RBAC scope; receives traces; lists connected resources |
 | **Endpoint** | `https://alpha-state-trading-multi-agent.services.ai.azure.com/api/projects/alpha-state-trading-MMA` | Used by `AIProjectClient` |
-| **Agent** | `alphastate-trading-mma-agent`, version **v19** | The runtime; orchestrates model + tools |
+| **Agent** | `alphastate-trading-mma-agent`, version **v20** | The runtime; orchestrates model + tools |
 | **Model deployment** | `gpt-4.1-mini-2025-04-14` | Backing LLM (selected inside the agent's config) |
 | **MCP tools** | 5 tools, attached directly to the agent | Source-of-truth data |
 | **Connected resource** | `tradingiq-ai` (App Insights) | Foundry portal's Tracing tab reads from here |
@@ -192,7 +192,7 @@ stream = openai_client.responses.create(
     extra_body={
         "agent_reference": {
             "name": "alphastate-trading-mma-agent",
-            "version": "19",
+            "version": "20",
             "type": "agent_reference",
         }
     },
@@ -205,7 +205,7 @@ The agent's system prompt, tool list, MCP server URL, and model are all
 configured **in the Foundry portal**, not in code. Every time we change those,
 the agent's version number bumps and we pin the new version via
 `AZURE_EXISTING_AGENT_VERSION` on `tradingiq-api`. That is why this repo has
-agent v17 → v18 → v19 markers in the Git Tags timeline.
+agent v17 → v18 → v19 → v20 markers in the Git Tags timeline.
 
 ### MCP tools attached to the agent
 
@@ -255,9 +255,9 @@ resource group `rg-dev`, region `westus`.
 
 | App | Image | Ingress | Notes |
 |---|---|---|---|
-| `tradingiq-web` | `alphastatetradingacr.azurecr.io/tradingiq-web:v1` | External, port 3000 | Next.js 16 in standalone mode |
-| `tradingiq-api` | `alphastatetradingacr.azurecr.io/tradingiq-api:v2` | External, port 8000 | FastAPI + OTel; CORS for tradingiq-web only |
-| `tradingiq-mcp` | `alphastatetradingacr.azurecr.io/tradingiq-mcp:v1` | External, port 8080 | External by necessity — Foundry's MCP client cannot reach internal-only endpoints today |
+| `tradingiq-web` | `alphastatetradingacr.azurecr.io/tradingiq-web:v2` | External, port 3000 | Next.js 16 in standalone mode |
+| `tradingiq-api` | `alphastatetradingacr.azurecr.io/tradingiq-api:v3` | External, port 8000 | FastAPI + OTel; CORS for tradingiq-web only |
+| `tradingiq-mcp` | `alphastatetradingacr.azurecr.io/tradingiq-mcp:v2` | External, port 8080 | External by necessity — Foundry's MCP client cannot reach internal-only endpoints today |
 
 All three share the Container Apps Environment `trading-env`. The shared
 environment means the apps can resolve each other's FQDNs without extra
