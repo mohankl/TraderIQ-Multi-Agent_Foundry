@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { CopilotKit } from "@copilotkit/react-core";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <CopilotKit runtimeUrl="/api/copilotkit/run" agent="finbotAgent">
+          <TooltipProvider>{children}</TooltipProvider>
+        </CopilotKit>
       </body>
     </html>
   );

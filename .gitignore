@@ -15,3 +15,6 @@ wheels/
 
 # macOS
 .DS_Store
+
+# Playwright MCP test artifacts
+.playwright-mcp/

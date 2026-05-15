@@ -12,6 +12,8 @@ export interface Thread {
   title: string;
   messages: Message[];
   createdAt: number;
+  /** Foundry response_id for conversation continuity. Set after the first run. */
+  foreignId?: string;
 }
 
 const STORAGE_KEY = "finbot_threads";
@@ -79,6 +81,14 @@ export function deleteThread(id: string): void {
 
 export function setActiveThreadId(id: string): void {
   localStorage.setItem(ACTIVE_KEY, id);
+}
+
+export function setThreadForeignId(threadId: string, foreignId: string): void {
+  const threads = load();
+  const idx = threads.findIndex((t) => t.id === threadId);
+  if (idx === -1) return;
+  threads[idx].foreignId = foreignId;
+  save(threads);
 }
 
 export function getActiveThreadId(): string | null {
