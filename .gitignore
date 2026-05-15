@@ -21,3 +21,6 @@ wheels/
 
 # Claude Code per-user overrides (template is .claude/settings.local.json.example)
 .claude/settings.local.json
+
+# Claude Code runtime state (scheduled wakeup lockfile)
+.claude/scheduled_tasks.lock

@@ -13,6 +13,13 @@ from starlette.responses import JSONResponse
 SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY")
 MCP_API_KEY = os.environ.get("MCP_API_KEY")
 
+# Wikipedia's MediaWiki API requires a descriptive User-Agent. Anonymous
+# requests with the default `wikipedia` lib UA may get an empty/HTML body
+# from Azure egress IPs, which then surfaces as a JSONDecodeError.
+wikipedia.set_user_agent(
+    "finbot-mcp/1.0 (https://github.com/alphastate-ai/Trading-Multi-Agent; contact@alphastate.ai)"
+)
+
 
 class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -298,13 +305,24 @@ def wikipedia_lookup(query: str) -> str:
     concepts, or historical events. Returns a summary of the most relevant
     article. Do not use for current prices or news.
     """
-    try:
-        return wikipedia.summary(query, sentences=5, auto_suggest=True, redirect=True)
-    except wikipedia.DisambiguationError as e:
-        options = ", ".join(e.options[:5])
-        return f"Ambiguous query. Try one of: {options}"
-    except wikipedia.PageError:
-        return f"No Wikipedia page found for: {query}"
+    # Try once with auto_suggest, then fall back without it. The auto_suggest
+    # path sometimes lands on a spurious match (e.g. "Apple Inc." → "apple in")
+    # that then 404s.
+    for auto_suggest in (True, False):
+        try:
+            return wikipedia.summary(
+                query, sentences=5, auto_suggest=auto_suggest, redirect=True
+            )
+        except wikipedia.DisambiguationError as e:
+            options = ", ".join(e.options[:5])
+            return f"Ambiguous query. Try one of: {options}"
+        except wikipedia.PageError:
+            continue  # try the other auto_suggest mode
+        except Exception as e:
+            # Network errors, MediaWiki returning a non-JSON body, rate
+            # limiting, etc. Don't let these blow up the agent run.
+            return f"Wikipedia lookup failed for '{query}': {type(e).__name__}: {e}"
+    return f"No Wikipedia page found for: {query}"
 
 
 app = mcp.streamable_http_app()

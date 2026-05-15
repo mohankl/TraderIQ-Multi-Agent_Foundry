@@ -29,9 +29,9 @@ This file is loaded by Claude Code when working in this repo. It mirrors the dep
 
 | App | Image | Port | Purpose |
 |---|---|---|---|
-| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v7` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance |
-| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v8` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). Generic envelope extractor (no per-tool code); attaches `source_tool_call_id` and surfaces Foundry approval-pending state as a clear error |
-| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v6` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders inline charts + stock cards via a render-slot registry; provenance footer shows `as_of` + tool-call id |
+| `finbot-mcp` | `alphastatetradingacr.azurecr.io/finbot-mcp:v8` | 8080 | MCP server, 5 tools. Each renderable tool returns a `{data, render}` envelope and stamps `data.as_of` for provenance. `wikipedia_lookup` sets a descriptive User-Agent and catches all exceptions to keep the run alive |
+| `finbot-api` | `alphastatetradingacr.azurecr.io/finbot-api:v9` | 8000 | FastAPI client; exposes `/health` and `/agui` (AG-UI SSE). **Streams** Foundry Responses events: per-tool `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and `CUSTOM ui.render` emitted as each tool completes. OpenTelemetry traces on `agent.run` |
+| `finbot-web` | `alphastatetradingacr.azurecr.io/finbot-web:v7` | 3000 | Next.js 16 frontend; `/api/chat` proxies SSE; renders interleaved step pills, text deltas, and inline cards progressively as the run unfolds |
 
 All three apps use system-assigned managed identity for ACR pull.
 
@@ -86,9 +86,13 @@ Trading-Multi-Agent/
 
 1. Browser → `POST /api/chat` (Next.js route) with `{threadId, messageId, content}`
 2. Next.js → `POST ${FINBOT_API_URL}/agui` with full AG-UI input envelope
-3. FastAPI calls Foundry via OpenAI Responses API, sets `previous_response_id` only when `threadId` starts with `resp_`
-4. FastAPI streams AG-UI events: `RUN_STARTED` → `TEXT_MESSAGE_START` → `TEXT_MESSAGE_CONTENT` → `TEXT_MESSAGE_END` → `RUN_FINISHED`
-5. Browser parses events, accumulates `delta`, persists assistant message and `RUN_FINISHED.threadId` as `Thread.foreignId` for the next turn
+3. FastAPI calls Foundry via OpenAI Responses API with `stream=True`, sets `previous_response_id` only when `threadId` starts with `resp_`
+4. FastAPI maps the Foundry stream onto AG-UI events as they arrive:
+   - `response.output_item.added` (mcp_call) → `STEP_STARTED` with `step_name="tool:<name>"`
+   - `response.output_item.done` (mcp_call) → `CUSTOM ui.render` (if envelope) + `STEP_FINISHED`
+   - `response.output_text.delta` → `TEXT_MESSAGE_START` (once) + `TEXT_MESSAGE_CONTENT` (one delta per token)
+   - `response.completed` → `RUN_FINISHED` with `thread_id=response.id`
+5. Browser parses events live: step pills appear inline, cards render the moment their tool finishes, text streams token-by-token. The whole bubble is persisted on `RUN_FINISHED`.
 
 ## Generative UI / Inline Components
 
@@ -110,10 +114,11 @@ Tools that don't render UI (`get_yahoo_finance_news`, `search_news`, `wikipedia_
 ### Flow
 
 1. Agent calls an MCP tool that returns the envelope above.
-2. FastAPI's [agent.py](finbot/app/agent.py) iterates `response.output`. For every tool-call item whose parsed JSON has both `data` and `render`, it merges them into a flat payload `{kind, ...render-hints, ...data}`, attaches `source_tool_call_id` (the Foundry `mcp_*` id), and emits one AG-UI `CUSTOM` event per envelope with `name="ui.render"`, between `TEXT_MESSAGE_END` and `RUN_FINISHED`.
-3. The frontend SSE parser in [chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) collects these CUSTOM events into a `renderSlots` array on the persisted assistant message.
-4. [chat-message.tsx](finbot/frontend/src/components/chat-message.tsx) renders the markdown text then iterates `renderSlots` through [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](finbot/frontend/src/components/chart-card.tsx), [stock-card.tsx](finbot/frontend/src/components/stock-card.tsx)).
-5. Every card renders a tiny [render-source.tsx](finbot/frontend/src/components/render-source.tsx) footer showing `as_of` and the tool-call id, so drift between the narrative and the card is visible.
+2. FastAPI's [agent.py](finbot/app/agent.py) streams Foundry events. On every `response.output_item.done` for an `mcp_call`, it parses the output JSON; if it has both `data` and `render`, it merges them into a flat payload `{kind, ...render-hints, ...data}`, attaches `source_tool_call_id`, and emits one AG-UI `CUSTOM` event with `name="ui.render"` immediately (no waiting for the run to finish).
+3. The frontend SSE parser in [chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) keeps a *live* segment list for the in-flight assistant bubble: each STEP_STARTED, CUSTOM render, and text delta is appended in arrival order. The bubble updates frame-by-frame. On `RUN_FINISHED` the segments are flattened into a normal persisted `Message` (text + `renderSlots`).
+4. [chat-message.tsx](finbot/frontend/src/components/chat-message.tsx) renders persisted messages: markdown text then iterates `renderSlots` through [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](finbot/frontend/src/components/chart-card.tsx), [stock-card.tsx](finbot/frontend/src/components/stock-card.tsx)).
+5. Step pills come from [step-pill.tsx](finbot/frontend/src/components/step-pill.tsx) — they show "Fetching <tool>…" while the tool is running and flip to a checkmark when it completes. The pill is only in the live bubble; it is not persisted.
+6. Every card renders a tiny [render-source.tsx](finbot/frontend/src/components/render-source.tsx) footer showing `as_of` and the tool-call id, so drift between the narrative and the card is visible.
 
 ### Division of labor (the narrative-vs-card contract)
 
@@ -135,6 +140,22 @@ Each renderable tool's docstring carries a "DIVISION OF LABOR" section instructi
 - `CUSTOM` is the AG-UI-blessed channel for arbitrary typed payloads ([docs](https://docs.ag-ui.com/concepts/events)).
 - Markdown-fenced sentinels are fragile against LLM hallucination.
 - `TOOL_CALL_RESULT` events are meant to flow into the next agent thought, not the UI.
+
+## Observability
+
+FastAPI is wired for OpenTelemetry in [app/tracing.py](finbot/app/tracing.py). On startup `init_tracing()` configures an OTLP-HTTP exporter and `instrument_app()` auto-instruments FastAPI request spans and httpx outbound calls (the OpenAI/Foundry client uses httpx under the hood, so every Foundry round-trip becomes a child span).
+
+The custom `agent.run` span wraps the entire streaming call and is tagged with `agent.name`, `agent.version`, `run.id`, `response.id`, and (if blocked) `run.blocked_on_approval`. Exceptions are recorded on the span.
+
+To ship traces somewhere:
+```sh
+az containerapp update -n finbot-api -g rg-dev \
+  --set-env-vars \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector/v1/traces \
+    OTEL_SERVICE_NAME=finbot-api
+```
+
+If `OTEL_EXPORTER_OTLP_ENDPOINT` is unset the tracer provider is still installed but spans are no-ops — there's no crash and no overhead beyond span creation.
 
 ## Known Caveats
 
@@ -184,6 +205,7 @@ az containerapp logs show -n finbot-web -g rg-dev --tail 60
 - `v9.2` — Stock card (boarding-pass style) for fundamentals queries; richer get_stock_fundamentals output (exchange, sector, market-cap tier, dividend yield, ROE, volume); 52-week range visual bar (mcp:v5, api:v5, web:v4, agent v12)
 - `v10.0` — Self-describing tool envelope `{data, render}`. FastAPI extractor is now generic — no per-tool code. Adding a new inline UI component no longer requires a backend change (mcp:v6, api:v6, agent v14)
 - `v10.1` — Lossy-round-trip fix. Tool docstrings codify division of labor (card owns numbers, narrative owns interpretation). Tool data carries `as_of`; render payloads carry `source_tool_call_id`. Cards show a tiny provenance footer. Approval-pending state now surfaces as a clear error and doesn't poison the conversation (mcp:v7, api:v8, web:v6, agent v16)
+- `v10.2` — Streaming + progressive disclosure. FastAPI now consumes Foundry's streaming Responses events and maps them onto AG-UI `STEP_STARTED`/`STEP_FINISHED`, per-token `TEXT_MESSAGE_CONTENT` deltas, and a `CUSTOM ui.render` event the moment each tool finishes. Frontend renders a live segmented bubble (step pills inline, cards appearing as tools complete, text streaming token-by-token). OpenTelemetry traces on `agent.run` with FastAPI + httpx auto-instrumentation. Also hardens `wikipedia_lookup` (proper User-Agent + broad exception handling so MediaWiki rate-limits no longer abort the run) (mcp:v8, api:v9, web:v7, agent v16)
 
 ## Keeping This File Current
 

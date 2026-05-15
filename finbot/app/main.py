@@ -8,9 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.agent import run_agent_stream
+from app.tracing import init_tracing, instrument_app
 
 _ = load_dotenv()
+init_tracing()
 app = FastAPI(title="FinBot API")
+instrument_app(app)
 
 _raw_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
 _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]

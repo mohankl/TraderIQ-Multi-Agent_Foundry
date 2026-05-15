@@ -15,7 +15,7 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 
 1. **Read [CLAUDE.md](CLAUDE.md) before any non-trivial change.** Don't reconstruct facts that already live there.
 2. **Confirm before mutating shared cloud resources.** That includes `az containerapp update`, `az role assignment create`, `git push`, image rollouts. Local dev (`uv run uvicorn`, `npm run dev`) is fine without asking.
-3. **Match the existing event invariants** when touching the streaming path. The combo `TEXT_MESSAGE_START` + `TEXT_MESSAGE_CONTENT` (deltas) + `TEXT_MESSAGE_END` is what the frontend parser expects. Don't introduce `TEXT_MESSAGE_CHUNK` into a flow that already emits explicit start/end — see the caveat in CLAUDE.md.
+3. **Match the existing event invariants** when touching the streaming path. The combo `TEXT_MESSAGE_START` + `TEXT_MESSAGE_CONTENT` (deltas) + `TEXT_MESSAGE_END` is what the frontend parser expects, and tool calls are bracketed with `STEP_STARTED`/`STEP_FINISHED` (with `CUSTOM ui.render` in between when the tool returns a `{data, render}` envelope). Don't introduce `TEXT_MESSAGE_CHUNK` into a flow that already emits explicit start/end — see the caveat in CLAUDE.md.
 4. **Update CLAUDE.md when reality drifts.** If you bump an image tag, change an env var, add a tool to the MCP server, or change an FQDN, also update CLAUDE.md (or run `/update-claude-md` if you're in Claude Code).
 5. **Avoid bringing in new top-level deps.** Both `finbot/` and `finbot/frontend/` have a deliberate dependency set. If you genuinely need something new, ask first.
 
@@ -28,6 +28,8 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 | MCP tools | `FastMCP` with `stateless_http`, `X-API-Key` header |
 | Frontend streaming | Browser fetch → Next.js `/api/chat` route → FastAPI `/agui` (AG-UI SSE) |
 | State machine for AG-UI events | See `@ag-ui/client` `verifyEvents` operator — events must be properly nested |
+| Foundry streaming | OpenAI Responses API with `stream=True`; iterate the synchronous generator, map `response.output_item.*` and `response.output_text.delta` events to AG-UI |
+| Tracing | OpenTelemetry SDK + OTLP HTTP exporter; set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable, or leave unset for no-op |
 
 ## Where to make different kinds of changes
 
