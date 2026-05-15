@@ -26,7 +26,7 @@ _project_client = AIProjectClient(
     credential=_credential,
 )
 _openai_client = _project_client.get_openai_client()
-_tracer = trace.get_tracer("finbot.agent")
+_tracer = trace.get_tracer("tradingiq.agent")
 
 
 def _extract_render_payload(item: Any, tool_call_id: str | None) -> dict[str, Any] | None:

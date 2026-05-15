@@ -24,7 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`}>
-        <CopilotKit runtimeUrl="/api/copilotkit/run" agent="finbotAgent">
+        <CopilotKit runtimeUrl="/api/copilotkit/run" agent="tradingIqAgent">
           <TooltipProvider>{children}</TooltipProvider>
         </CopilotKit>
       </body>

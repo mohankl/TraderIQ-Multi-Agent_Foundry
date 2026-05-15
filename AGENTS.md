@@ -17,7 +17,7 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 2. **Confirm before mutating shared cloud resources.** That includes `az containerapp update`, `az role assignment create`, `git push`, image rollouts. Local dev (`uv run uvicorn`, `npm run dev`) is fine without asking.
 3. **Match the existing event invariants** when touching the streaming path. The combo `TEXT_MESSAGE_START` + `TEXT_MESSAGE_CONTENT` (deltas) + `TEXT_MESSAGE_END` is what the frontend parser expects, and tool calls are bracketed with `STEP_STARTED`/`STEP_FINISHED` (with `CUSTOM ui.render` in between when the tool returns a `{data, render}` envelope). Don't introduce `TEXT_MESSAGE_CHUNK` into a flow that already emits explicit start/end — see the caveat in CLAUDE.md.
 4. **Update CLAUDE.md when reality drifts.** If you bump an image tag, change an env var, add a tool to the MCP server, or change an FQDN, also update CLAUDE.md (or run `/update-claude-md` if you're in Claude Code).
-5. **Avoid bringing in new top-level deps.** Both `finbot/` and `finbot/frontend/` have a deliberate dependency set. If you genuinely need something new, ask first.
+5. **Avoid bringing in new top-level deps.** Both `tradingiq/` and `tradingiq/frontend/` have a deliberate dependency set. If you genuinely need something new, ask first.
 
 ## Tool / SDK pointers for non-Claude agents
 
@@ -36,13 +36,13 @@ The canonical knowledge base is [CLAUDE.md](CLAUDE.md). Read it first — it is 
 | Change | File |
 |---|---|
 | Add a new MCP tool | [mcp-server/server.py](mcp-server/server.py) |
-| Change the Foundry call shape | [finbot/app/agent.py](finbot/app/agent.py) |
-| Add an HTTP endpoint to FastAPI | [finbot/app/main.py](finbot/app/main.py) |
-| Change chat UI behavior | [finbot/frontend/src/components/chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) |
-| Change SSE proxy behavior | [finbot/frontend/src/app/api/chat/route.ts](finbot/frontend/src/app/api/chat/route.ts) |
-| Bump frontend container | [finbot/frontend/Dockerfile](finbot/frontend/Dockerfile) |
-| Bump backend container | [finbot/Dockerfile](finbot/Dockerfile) |
-| Add a new inline UI component (e.g. heatmap) | (1) MCP tool returns `{data, render: {kind: "your_kind"}}` envelope in [mcp-server/server.py](mcp-server/server.py); (2) new variant in `RenderPayload` union in [finbot/frontend/src/lib/threads.ts](finbot/frontend/src/lib/threads.ts); (3) new case in [finbot/frontend/src/components/render-slot.tsx](finbot/frontend/src/components/render-slot.tsx) + component. No FastAPI change required |
+| Change the Foundry call shape | [tradingiq/app/agent.py](tradingiq/app/agent.py) |
+| Add an HTTP endpoint to FastAPI | [tradingiq/app/main.py](tradingiq/app/main.py) |
+| Change chat UI behavior | [tradingiq/frontend/src/components/chat-area.tsx](tradingiq/frontend/src/components/chat-area.tsx) |
+| Change SSE proxy behavior | [tradingiq/frontend/src/app/api/chat/route.ts](tradingiq/frontend/src/app/api/chat/route.ts) |
+| Bump frontend container | [tradingiq/frontend/Dockerfile](tradingiq/frontend/Dockerfile) |
+| Bump backend container | [tradingiq/Dockerfile](tradingiq/Dockerfile) |
+| Add a new inline UI component (e.g. heatmap) | (1) MCP tool returns `{data, render: {kind: "your_kind"}}` envelope in [mcp-server/server.py](mcp-server/server.py); (2) new variant in `RenderPayload` union in [tradingiq/frontend/src/lib/threads.ts](tradingiq/frontend/src/lib/threads.ts); (3) new case in [tradingiq/frontend/src/components/render-slot.tsx](tradingiq/frontend/src/components/render-slot.tsx) + component. No FastAPI change required |
 
 ## Git conventions
 

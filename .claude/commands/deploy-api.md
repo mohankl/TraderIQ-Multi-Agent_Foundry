@@ -13,7 +13,7 @@ You are deploying the FastAPI backend. Follow these steps and report back at eac
 2. Confirm the target tag with the user before building.
 3. Run the build:
    ```sh
-   cd finbot
+   cd tradingiq
    az acr build --registry alphastatetradingacr --image finbot-api:$TAG --platform linux/amd64 .
    ```
    Run it with `run_in_background: true` — ACR builds take 1-3 minutes.

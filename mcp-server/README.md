@@ -1,6 +1,6 @@
-# finbot-mcp
+# tradingiq-mcp
 
-MCP server exposing FinBot's tools to Microsoft Foundry agents.
+MCP server exposing Trading IQ's tools to Microsoft Foundry agents.
 
 ## Tools
 

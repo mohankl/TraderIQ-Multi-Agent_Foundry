@@ -1,14 +1,14 @@
 import { CopilotRuntime, createCopilotRuntimeHandler } from "@copilotkit/runtime/v2";
 import { HttpAgent } from "@ag-ui/client";
 
-const finbotAgent = new HttpAgent({
-  url: process.env.FINBOT_API_URL
-    ? `${process.env.FINBOT_API_URL}/agui`
+const tradingIqAgent = new HttpAgent({
+  url: process.env.TRADINGIQ_API_URL
+    ? `${process.env.TRADINGIQ_API_URL}/agui`
     : "http://localhost:8000/agui",
 });
 
 const runtime = new CopilotRuntime({
-  agents: { finbotAgent },
+  agents: { tradingIqAgent },
 });
 
 const handler = createCopilotRuntimeHandler({

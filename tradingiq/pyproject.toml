@@ -1,7 +1,7 @@
 [project]
-name = "finbot"
+name = "tradingiq"
 version = "0.1.0"
-description = "Thin FastAPI client for the FinBot Foundry agent"
+description = "Thin FastAPI client for the Trading IQ Foundry agent"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

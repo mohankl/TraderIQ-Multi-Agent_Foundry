@@ -44,7 +44,7 @@ All three apps use system-assigned managed identity for ACR pull.
 
 ```
 Trading-Multi-Agent/
-  finbot/
+  tradingiq/
     Dockerfile              # FastAPI image (python:3.13-slim)
     app/
       agent.py              # AIProjectClient + OpenAI Responses API; AG-UI SSE
@@ -55,7 +55,7 @@ Trading-Multi-Agent/
       next.config.ts        # output: "standalone"
       src/
         app/
-          api/chat/route.ts # SSE proxy: POSTs to ${FINBOT_API_URL}/agui
+          api/chat/route.ts # SSE proxy: POSTs to ${TRADINGIQ_API_URL}/agui
           api/copilotkit/   # legacy CopilotKit handlers — kept but unused
           layout.tsx
           page.tsx
@@ -114,11 +114,11 @@ Tools that don't render UI (`get_yahoo_finance_news`, `search_news`, `wikipedia_
 ### Flow
 
 1. Agent calls an MCP tool that returns the envelope above.
-2. FastAPI's [agent.py](finbot/app/agent.py) streams Foundry events. On every `response.output_item.done` for an `mcp_call`, it parses the output JSON; if it has both `data` and `render`, it merges them into a flat payload `{kind, ...render-hints, ...data}`, attaches `source_tool_call_id`, and emits one AG-UI `CUSTOM` event with `name="ui.render"` immediately (no waiting for the run to finish).
-3. The frontend SSE parser in [chat-area.tsx](finbot/frontend/src/components/chat-area.tsx) keeps a *live* segment list for the in-flight assistant bubble: each STEP_STARTED, CUSTOM render, and text delta is appended in arrival order. The bubble updates frame-by-frame. On `RUN_FINISHED` the segments are flattened into a normal persisted `Message` (text + `renderSlots`).
-4. [chat-message.tsx](finbot/frontend/src/components/chat-message.tsx) renders persisted messages: markdown text then iterates `renderSlots` through [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](finbot/frontend/src/components/chart-card.tsx), [stock-card.tsx](finbot/frontend/src/components/stock-card.tsx)).
-5. Step pills come from [step-pill.tsx](finbot/frontend/src/components/step-pill.tsx) — they show "Fetching <tool>…" while the tool is running and flip to a checkmark when it completes. The pill is only in the live bubble; it is not persisted.
-6. Every card renders a tiny [render-source.tsx](finbot/frontend/src/components/render-source.tsx) footer showing `as_of` and the tool-call id, so drift between the narrative and the card is visible.
+2. FastAPI's [agent.py](tradingiq/app/agent.py) streams Foundry events. On every `response.output_item.done` for an `mcp_call`, it parses the output JSON; if it has both `data` and `render`, it merges them into a flat payload `{kind, ...render-hints, ...data}`, attaches `source_tool_call_id`, and emits one AG-UI `CUSTOM` event with `name="ui.render"` immediately (no waiting for the run to finish).
+3. The frontend SSE parser in [chat-area.tsx](tradingiq/frontend/src/components/chat-area.tsx) keeps a *live* segment list for the in-flight assistant bubble: each STEP_STARTED, CUSTOM render, and text delta is appended in arrival order. The bubble updates frame-by-frame. On `RUN_FINISHED` the segments are flattened into a normal persisted `Message` (text + `renderSlots`).
+4. [chat-message.tsx](tradingiq/frontend/src/components/chat-message.tsx) renders persisted messages: markdown text then iterates `renderSlots` through [render-slot.tsx](tradingiq/frontend/src/components/render-slot.tsx), which dispatches on the discriminated union `RenderPayload.kind` to a concrete component (e.g. [chart-card.tsx](tradingiq/frontend/src/components/chart-card.tsx), [stock-card.tsx](tradingiq/frontend/src/components/stock-card.tsx)).
+5. Step pills come from [step-pill.tsx](tradingiq/frontend/src/components/step-pill.tsx) — they show "Fetching <tool>…" while the tool is running and flip to a checkmark when it completes. The pill is only in the live bubble; it is not persisted.
+6. Every card renders a tiny [render-source.tsx](tradingiq/frontend/src/components/render-source.tsx) footer showing `as_of` and the tool-call id, so drift between the narrative and the card is visible.
 
 ### Division of labor (the narrative-vs-card contract)
 
@@ -130,8 +130,8 @@ Each renderable tool's docstring carries a "DIVISION OF LABOR" section instructi
 ### Adding a new inline component
 
 1. Add an MCP tool in [mcp-server/server.py](mcp-server/server.py) that returns the envelope `{data, render: {kind: "your_kind"}}`. Include `data.as_of` if applicable. Write its docstring with a DIVISION OF LABOR section.
-2. Add a new variant to the `RenderPayload` union in [threads.ts](finbot/frontend/src/lib/threads.ts).
-3. Add a case to [render-slot.tsx](finbot/frontend/src/components/render-slot.tsx) and ship the component (use `RenderSource` for the provenance footer).
+2. Add a new variant to the `RenderPayload` union in [threads.ts](tradingiq/frontend/src/lib/threads.ts).
+3. Add a case to [render-slot.tsx](tradingiq/frontend/src/components/render-slot.tsx) and ship the component (use `RenderSource` for the provenance footer).
 4. **No FastAPI change needed** — the generic envelope detector picks it up automatically.
 5. In the Foundry portal: approve the new tool (auto-approve recommended), then save a new agent version. Pin the env var on `finbot-api`.
 
@@ -145,7 +145,7 @@ Each renderable tool's docstring carries a "DIVISION OF LABOR" section instructi
 
 Tracing is wired to **Azure AI Foundry's** built-in observability stack. The Foundry project `alpha-state-trading-MMA` has the App Insights resource `tradingiq-ai` (in `rg-dev`) attached via the portal's *Connected resources*. The Foundry "Tracing" tab reads spans out of that App Insights workspace; there's no separate Foundry-native OTLP endpoint.
 
-[app/tracing.py](finbot/app/tracing.py) calls `AIProjectClient.telemetry.get_application_insights_connection_string()` at startup (auth via `DefaultAzureCredential`, no env-var needed), hands the string to `azure.monitor.opentelemetry.configure_azure_monitor()`, then runs `AIProjectInstrumentor().instrument()`. That single bootstrap installs the tracer provider, the App Insights exporter, FastAPI/httpx auto-instrumentation, and a GenAI auto-instrumentor that emits `gen_ai.*` spans for every `responses.create()` call made through the project's OpenAI client. Custom `agent.run` and `agent.tool` spans nest inside.
+[app/tracing.py](tradingiq/app/tracing.py) calls `AIProjectClient.telemetry.get_application_insights_connection_string()` at startup (auth via `DefaultAzureCredential`, no env-var needed), hands the string to `azure.monitor.opentelemetry.configure_azure_monitor()`, then runs `AIProjectInstrumentor().instrument()`. That single bootstrap installs the tracer provider, the App Insights exporter, FastAPI/httpx auto-instrumentation, and a GenAI auto-instrumentor that emits `gen_ai.*` spans for every `responses.create()` call made through the project's OpenAI client. Custom `agent.run` and `agent.tool` spans nest inside.
 
 Required env vars on `finbot-api`:
 ```sh
@@ -169,21 +169,21 @@ Viewing traces: **Azure AI Foundry portal → project → Tracing**. ~3–5 minu
 Local dev:
 ```sh
 # API
-cd finbot && uv run uvicorn app.main:app --reload --port 8000
+cd tradingiq && uv run uvicorn app.main:app --reload --port 8000
 # Frontend
-cd finbot/frontend && npm run dev
+cd tradingiq/frontend && npm run dev
 ```
 
 Rebuild + redeploy frontend:
 ```sh
-cd finbot/frontend
+cd tradingiq/frontend
 az acr build --registry alphastatetradingacr --image finbot-web:vN --platform linux/amd64 .
 az containerapp update -n finbot-web -g rg-dev --image alphastatetradingacr.azurecr.io/finbot-web:vN
 ```
 
 Rebuild + redeploy API:
 ```sh
-cd finbot
+cd tradingiq
 az acr build --registry alphastatetradingacr --image finbot-api:vN --platform linux/amd64 .
 az containerapp update -n finbot-api -g rg-dev --image alphastatetradingacr.azurecr.io/finbot-api:vN
 ```

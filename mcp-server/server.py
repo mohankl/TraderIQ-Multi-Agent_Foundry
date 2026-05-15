@@ -17,7 +17,7 @@ MCP_API_KEY = os.environ.get("MCP_API_KEY")
 # requests with the default `wikipedia` lib UA may get an empty/HTML body
 # from Azure egress IPs, which then surfaces as a JSONDecodeError.
 wikipedia.set_user_agent(
-    "finbot-mcp/1.0 (https://github.com/alphastate-ai/Trading-Multi-Agent; contact@alphastate.ai)"
+    "tradingiq-mcp/1.0 (https://github.com/alphastate-ai/Trading-Multi-Agent; contact@alphastate.ai)"
 )
 
 
@@ -30,7 +30,7 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
 
 
 mcp = FastMCP(
-    "finbot-tools",
+    "tradingiq-tools",
     stateless_http=True,
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )

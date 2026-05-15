@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 
-const FINBOT_URL = process.env.FINBOT_API_URL ?? "http://localhost:8000";
+const TRADINGIQ_URL = process.env.TRADINGIQ_API_URL ?? "http://localhost:8000";
 
 export async function POST(req: NextRequest) {
   const { threadId, messageId, content } = await req.json();
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     state: {},
   };
 
-  const upstream = await fetch(`${FINBOT_URL}/agui`, {
+  const upstream = await fetch(`${TRADINGIQ_URL}/agui`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

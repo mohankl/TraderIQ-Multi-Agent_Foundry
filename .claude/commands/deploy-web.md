@@ -13,7 +13,7 @@ You are deploying the Next.js frontend. Follow these steps and report back at ea
 2. Confirm the target tag with the user before building.
 3. Run the build:
    ```sh
-   cd finbot/frontend
+   cd tradingiq/frontend
    az acr build --registry alphastatetradingacr --image finbot-web:$TAG --platform linux/amd64 .
    ```
    Use `run_in_background: true`.

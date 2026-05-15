@@ -12,7 +12,7 @@ from app.tracing import init_tracing, instrument_app
 
 _ = load_dotenv()
 init_tracing()
-app = FastAPI(title="FinBot API")
+app = FastAPI(title="Trading IQ API")
 instrument_app(app)
 
 _raw_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000")

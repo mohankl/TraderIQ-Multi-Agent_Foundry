@@ -21,7 +21,7 @@ If the caller didn't say, ask.
 
 ## Procedure
 
-1. Confirm the build context exists. For `finbot-api`, it's `finbot/`. For `finbot-web`, it's `finbot/frontend/`. For `finbot-mcp`, it's `mcp-server/`.
+1. Confirm the build context exists. For `finbot-api`, it's `tradingiq/`. For `finbot-web`, it's `tradingiq/frontend/`. For `finbot-mcp`, it's `mcp-server/`.
 2. List existing ACR tags so you pick a sensible new tag: `az acr repository show-tags -n alphastatetradingacr --repository <app>`.
 3. Build with `az acr build --registry alphastatetradingacr --image <app>:<tag> --platform linux/amd64 <context-dir>`. Run it in background.
 4. After the build completes, confirm the image is in ACR.

@@ -13,7 +13,7 @@ resource that's been attached to the project. So tracing here means:
    gets a span with `gen_ai.*` attributes that the Foundry UI knows how to
    render.
 
-Two important env vars (set on `finbot-api` Container App):
+Two important env vars (set on `tradingiq-api` Container App):
   - AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true (required before instrument())
   - OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true (prompts+outputs
     captured in spans; user opted into this — see CLAUDE.md "Observability")
@@ -35,7 +35,7 @@ def init_tracing() -> trace.Tracer:
     """Idempotent. Returns a tracer regardless of whether shipping worked."""
     global _initialized
     if _initialized:
-        return trace.get_tracer("finbot")
+        return trace.get_tracer("tradingiq")
 
     # GenAI auto-instrumentation refuses to attach unless this is set BEFORE
     # AIProjectInstrumentor().instrument() runs. Set it defensively here so
@@ -52,7 +52,7 @@ def init_tracing() -> trace.Tracer:
         if not endpoint:
             logger.warning("AZURE_EXISTING_AIPROJECT_ENDPOINT not set; tracing disabled")
             _initialized = True
-            return trace.get_tracer("finbot")
+            return trace.get_tracer("tradingiq")
 
         credential = DefaultAzureCredential()
         project = AIProjectClient(endpoint=endpoint, credential=credential)
@@ -63,7 +63,7 @@ def init_tracing() -> trace.Tracer:
                 "Foundry project has no Application Insights attached; tracing is no-op"
             )
             _initialized = True
-            return trace.get_tracer("finbot")
+            return trace.get_tracer("tradingiq")
 
         # One call installs: TracerProvider, BatchSpanProcessor, App Insights
         # exporter, and FastAPI/httpx/requests/urllib3/logging auto-instrumentation.
@@ -82,7 +82,7 @@ def init_tracing() -> trace.Tracer:
         logger.warning("Foundry tracing bootstrap failed: %s", exc)
 
     _initialized = True
-    return trace.get_tracer("finbot")
+    return trace.get_tracer("tradingiq")
 
 
 def instrument_app(_app) -> None:

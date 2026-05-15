@@ -75,8 +75,8 @@ export interface Thread {
   foreignId?: string;
 }
 
-const STORAGE_KEY = "finbot_threads";
-const ACTIVE_KEY = "finbot_active_thread";
+const STORAGE_KEY = "tradingiq_threads";
+const ACTIVE_KEY = "tradingiq_active_thread";
 
 function load(): Thread[] {
   if (typeof window === "undefined") return [];

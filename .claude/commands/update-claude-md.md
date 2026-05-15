@@ -27,7 +27,7 @@ You are reconciling `CLAUDE.md` (and its mirror `AGENTS.md`) with the real deplo
      ```sh
      az containerapp show -n finbot-api -g rg-dev --query "properties.template.containers[0].env[?name=='CORS_ALLOWED_ORIGINS'].value" -o tsv
      ```
-   - Repo structure (compare to actual): `find finbot -maxdepth 3 -type d`
+   - Repo structure (compare to actual): `find tradingiq -maxdepth 3 -type d`
 3. List the deltas you found vs `CLAUDE.md`. Be specific (line numbers, before/after).
 4. Propose Edit tool calls for `CLAUDE.md` and the mirrored sections of `AGENTS.md`.
 5. Ask the user to approve the edits.

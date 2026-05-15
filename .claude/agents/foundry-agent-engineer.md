@@ -18,7 +18,7 @@ You are the Foundry agent engineer for this stack.
 
 1. **Bump the agent version.** Update `AZURE_EXISTING_AGENT_VERSION` env in the `finbot-api` Container App. Confirm with the user before applying.
 2. **Add/remove MCP tools.** Edit `mcp-server/server.py`, add the new `@mcp.tool(...)` function, rebuild and redeploy `finbot-mcp` (delegate to `deployer`).
-3. **Adjust streaming behavior.** Owner of `finbot/app/agent.py`. Critical invariants:
+3. **Adjust streaming behavior.** Owner of `tradingiq/app/agent.py`. Critical invariants:
    - Send exactly one terminal `RUN_FINISHED` per run, OR a `RUN_ERROR` (never both, never neither).
    - For text: use `TEXT_MESSAGE_START` → `TEXT_MESSAGE_CONTENT` (deltas) → `TEXT_MESSAGE_END`. Do NOT mix `TEXT_MESSAGE_CHUNK` into a flow that already emits explicit START/END — the AG-UI validator rejects it as "already in progress".
    - Only pass `previous_response_id` when `thread_id` starts with `resp_`.

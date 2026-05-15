@@ -1,7 +1,7 @@
 [project]
-name = "finbot-mcp"
+name = "tradingiq-mcp"
 version = "0.1.0"
-description = "MCP server exposing FinBot tools (yfinance, SerpAPI, Wikipedia, Yahoo Finance News)"
+description = "MCP server exposing Trading IQ tools (yfinance, SerpAPI, Wikipedia, Yahoo Finance News)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
